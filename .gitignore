@@ -1,0 +1,54 @@
+# WinLoop - Git ignores
+
+# --- OS / Editor ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Visual Studio / VS Code
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Editor backup / temp files
+*.tmp
+*.backup
+*.bak
+*~
+*.swp
+
+# --- .NET build outputs ---
+**/bin/
+**/obj/
+*.pdb
+*.mdb
+
+# Test results
+TestResults/
+
+# NuGet
+**/packages/
+*.nupkg
+
+# --- WinLoop project outputs / artifacts ---
+# Local build snapshots (generated)
+build/
+
+# Installer outputs (generated)
+release/*.exe
+
+# Temporary working directory
+tmp/
+
+# Archived/migrated content folder (optional to keep out of repo)
+deprecated/
+
+# Logs / runtime data
+*.log
+
+# App runtime config (in case it gets created locally)
+# (Actual config lives under %LOCALAPPDATA% and should not be in repo)
+config.json

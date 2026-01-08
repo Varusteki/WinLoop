@@ -1,0 +1,28 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+  </PropertyGroup>
+
+  <!-- Use the copied tray icon in WinLoop\Resources as the application icon and as a WPF resource -->
+  <PropertyGroup>
+    <ApplicationIcon>Resources\trayIcon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Include the icon as Resource so WPF windows can reference it -->
+    <Resource Include="Resources\trayIcon.ico" />
+    <!-- Include skull XAML resource -->
+    <Resource Include="Resources\skull.xaml" />
+
+    <!-- XuanKongSi default images -->
+    <Content Include="Resources\XuanKongSi\*.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

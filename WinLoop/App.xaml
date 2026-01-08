@@ -1,0 +1,10 @@
+﻿<Application x:Class="WinLoop.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:WinLoop"
+             ShutdownMode="OnExplicitShutdown">
+    <Application.Resources>
+        <!-- Make tray icon available as a resource for window icons -->
+        <BitmapImage x:Key="AppIcon" UriSource="pack://application:,,,/Resources/trayIcon.ico" />
+    </Application.Resources>
+</Application>

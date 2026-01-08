@@ -1,0 +1,16 @@
+<Window x:Class="WinLoop.UI.MenuOverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ResizeMode="NoResize"
+        Left="0" Top="0"
+        Width="{x:Static SystemParameters.PrimaryScreenWidth}"
+        Height="{x:Static SystemParameters.PrimaryScreenHeight}">
+    <Canvas Name="OverlayCanvas" Background="#01FFFFFF">
+        <!-- 菜单将动态添加到这里 -->
+    </Canvas>
+</Window>
