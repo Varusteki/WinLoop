@@ -1,9 +1,11 @@
 # WinLoop build script
 # Output: ./build/<version>
 # -NoOpen: do not open Explorer
+# -Version: override version prefix (default V0.2)
 
 param(
-    [switch]$NoOpen
+    [switch]$NoOpen,
+    [string]$Version = "V0.2"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,7 +60,7 @@ if (-not $baseDir) { throw 'baseDir is empty; cannot locate repo root' }
 $baseDir = (Resolve-Path -LiteralPath $baseDir).Path
 
 $currentDate = Get-Date -Format 'yyyyMMddHHmm'
-$version = "V0.1-$currentDate"
+$version = "$Version-$currentDate"
 Write-Host "Building WinLoop $version..."
 
 # Ensure build directory exists (keep history)
@@ -105,7 +107,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host 'Publishing project...'
-& dotnet publish -c Release -o (Join-Path -Path $scriptDir -ChildPath "build/$version")
+& dotnet publish -c Release -r win-x64 --self-contained false -o (Join-Path -Path $scriptDir -ChildPath "build/$version")
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'Publish failed!' -ForegroundColor Red
     Pop-Location

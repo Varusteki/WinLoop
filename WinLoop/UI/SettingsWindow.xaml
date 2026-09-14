@@ -156,6 +156,9 @@
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
                             <TextBlock Text="菜单样式：" VerticalAlignment="Center" Margin="0,0,10,0"/>
                             <RadioButton Name="BasicRadialRadio" Content="圆环" IsChecked="True" Margin="5" VerticalAlignment="Center"/>
+                            <RadioButton Name="CSHeadshotRadio" Content="八角星" Margin="5" VerticalAlignment="Center"/>
+                            <RadioButton Name="SpiderWebRadio" Content="蜘蛛网" Margin="5" VerticalAlignment="Center"/>
+                            <RadioButton Name="BaguaRadio" Content="八卦" Margin="5" VerticalAlignment="Center"/>
                         </StackPanel>
                         
                         <!-- 配置项 -->

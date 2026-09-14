@@ -460,16 +460,64 @@ public enum XuanKongSiTriggerKey
 - 文字模式：编辑器输入 Markdown，运行时渲染为 WPF `FlowDocument`；同时兼容旧版本保存的 `FlowDocument` XAML。
 - 图片模式：优先加载用户在 `%LOCALAPPDATA%\WinLoop\Media\` 下选择的图片；若未配置或加载失败，会回退到应用自带的 `WinLoop/Resources/XuanKongSi/` 默认图片。
 
+### 5.7 目标窗口漂移（V0.2 修复）
+**问题**：`WindowManagementService` 内部各处均调用 `GetForegroundWindow()` 实时取窗口。
+从中键按下到松开之间隔了用户选择扇区的时间，若期间前台窗口发生变化
+（通知弹窗、输入法窗口、菜单自身抢焦点），操作会打到错误的窗口上。
+若用户先把鼠标移到后台窗口上再按中键，则必然操作错对象。
+
+**解决**：在中键按下的瞬间锁定目标窗口，全程传递。
+1. `MouseHookService` 用 `WindowFromPoint(鼠标位置)` + `GetAncestor(GA_ROOT)` 解析顶层窗口；
+2. 过滤桌面（`GetDesktopWindow`）、任务栏（`Shell_TrayWnd` / `Shell_SecondaryTrayWnd`）
+   与自身进程窗口，命中过滤条件时回退到前台窗口；
+3. 通过 `MouseHookService.TargetWindow` 暴露，`App.OnActionSelected` 取出后
+   传给 `WindowManagementService.ExecuteAction(action, hwnd)`；
+4. 解析失败或窗口已销毁时，`ResolveHandler` 回退到 `GetForegroundWindow()`。
+
+### 5.8 分屏阻塞（V0.2 修复）
+**问题**：`MoveWindowCompensated` 在 `ShowWindow(SW_RESTORE)` 后 `Thread.Sleep(50)`
+等窗口状态更新。该调用发生在 UI 线程，每按一次中键分屏即阻塞界面 50ms。
+
+**解决**：`SW_RESTORE` 本身是同步生效的，去掉固定等待；
+移动改用 `SetWindowPos` + `SWP_NOZORDER | SWP_NOACTIVATE | SWP_ASYNCWINDOWPOS`，
+避免跨进程窗口操作时的同步阻塞。
+
+### 5.9 高 DPI 坐标错位（V0.2 修复）
+**问题**：项目原先没有任何 DPI 感知声明，进程运行在 DPI 虚拟化模式下，
+`SystemParameters.WorkArea`（WPF 逻辑单位）与 `SetWindowPos`（物理像素）
+之间在 125% / 150% 缩放下系统性错位。
+
+**解决**：
+1. 新增 `app.manifest`，在 csproj 中通过 `<ApplicationManifest>` 引入，
+   声明 `PerMonitorV2` DPI 感知；
+2. 工作区改由 `MonitorFromWindow` + `GetMonitorInfo` 获取（`rcWork` 已排除任务栏），
+   直接得到物理像素；两个 API 都失败时回退到 `SystemParameters.WorkArea`；
+3. 菜单窗口增加 `PhysicalToLogical` 换算（经 `PresentationSource.CompositionTarget.TransformFromDevice`），
+   鼠标钩子报告的物理像素统一换算为 WPF 逻辑坐标后再做定位与命中判定；
+4. 注意：`ShowAt` 中需先 `Show()` 以获得 `PresentationSource`，换算才有效。
+
+### 5.10 鼠标跟随精度（V0.2 改进）
+**问题**：菜单窗口用 `DispatcherTimer` 以 16ms 间隔轮询 `Control.MousePosition`，
+存在最多 16ms 延迟与采样丢失，且持续空转。
+
+**解决**：`MouseHookService` 在 `WH_MOUSE_LL` 回调中已能收到每次鼠标移动，
+新增 `MouseMoved` 事件推送坐标；`App.OnGlobalMouseMoved` 在钩子线程收到后
+用 `Dispatcher.BeginInvoke(DispatcherPriority.Input)` 切回 UI 线程更新高亮。
+菜单窗口的轮询定时器已移除，窗口内 `MouseMove` 保留为兜底路径。
+
 ## 6. 构建与部署
 
 ### 6.1 构建脚本 (build.ps1)
 ```powershell
 # 输出: ./build/<version>
-# 可选参数：-NoOpen（不自动打开输出目录）
-$version = "V0.1-$(Get-Date -Format 'yyyyMMddHHmm')"
+# 可选参数：-NoOpen（不自动打开输出目录）、-Version（版本前缀，默认 V0.2）
+$version = "$Version-$(Get-Date -Format 'yyyyMMddHHmm')"
 dotnet build -c Release
-dotnet publish -c Release -o ./build/$version
+dotnet publish -c Release -r win-x64 --self-contained false -o ./build/$version
 ```
+
+> 注：`dotnet publish` 指定 `-r win-x64 --self-contained false`，
+> 产物为 framework-dependent 的 64 位版本，需要目标机器安装 .NET Core 3.1 Runtime。
 
 ### 6.2 发布脚本 (release.ps1)
 

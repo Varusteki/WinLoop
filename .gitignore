@@ -39,12 +39,20 @@ build/
 
 # Installer outputs (generated)
 release/*.exe
+release/*.zip
 
 # Temporary working directory
 tmp/
 
 # Archived/migrated content folder (optional to keep out of repo)
 deprecated/
+
+# Reference projects cloned locally for study (not part of this repo)
+._wg/
+WGestures/
+
+# Ad-hoc publish output used for local verification
+probe-out/
 
 # Logs / runtime data
 *.log

@@ -1,9 +1,12 @@
 # Release packaging script (Inno Setup)
 # Flow: run build.ps1 -> copy output to ./tmp/<version> -> compile installer via ISCC -> move final exe to ./release -> cleanup tmp
+# If ISCC is unavailable, fall back to producing a portable .zip in ./release (unless -NoZipFallback).
 
 param(
     [string]$BuildScript = "./build.ps1",
-    [string]$ISCCPath = ""
+    [string]$ISCCPath = "",
+    [string]$Version = "V0.2",
+    [switch]$NoZipFallback
 )
 
 $ErrorActionPreference = "Stop"
@@ -158,7 +161,7 @@ if (-not (Test-Path -LiteralPath $buildScriptPath)) {
 
 # 调用构建脚本（传入 -NoOpen 禁止自动打开 Explorer）
 Write-Host "Running build script: $buildScriptPath -NoOpen"
-& powershell -NoProfile -ExecutionPolicy Bypass -File $buildScriptPath -NoOpen
+& powershell -NoProfile -ExecutionPolicy Bypass -File $buildScriptPath -NoOpen -Version $Version
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build script failed, aborting packaging." -ForegroundColor Red
     exit 1
@@ -195,20 +198,52 @@ if ($ISCCPath -and (Test-Path $ISCCPath)) {
     $iscc = $ISCCPath
 }
 else {
-    $candidates = @("C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe", "C:\\Program Files\\Inno Setup 6\\ISCC.exe")
-    $iscc = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+    # 常见安装位置：系统级安装、以及 winget 的用户级安装（%LOCALAPPDATA%\Programs）
+    $candidates = @(
+        "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+        "C:\Program Files\Inno Setup 6\ISCC.exe",
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe")
+    )
+    $iscc = $candidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 }
 
 if (-not $iscc) {
-    Write-Host "ISCC.exe not found. Install Inno Setup or pass -ISCCPath. Cleaning temp and exiting." -ForegroundColor Yellow
+    Write-Host "ISCC.exe not found. Falling back to portable zip packaging." -ForegroundColor Yellow
+
+    if ($NoZipFallback) {
+        Write-Host "Zip fallback disabled (-NoZipFallback). Cleaning temp and exiting." -ForegroundColor Yellow
+        if (Test-Path $tmpDir) { Remove-Item -Path $tmpDir -Recurse -Force }
+        exit 1
+    }
+
+    $zipPath = Join-Path $releaseRoot ("WinLoop_$versionName" + "_portable.zip")
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+
+    Write-Host "Creating portable zip: $zipPath"
+    Compress-Archive -Path (Join-Path $tmpDir "*") -DestinationPath $zipPath -CompressionLevel Optimal -Force
+
+    if (-not (Test-Path -LiteralPath $zipPath)) {
+        Write-Host "Failed to create portable zip. Cleaning temp and exiting." -ForegroundColor Red
+        if (Test-Path $tmpDir) { Remove-Item -Path $tmpDir -Recurse -Force }
+        exit 1
+    }
+
     if (Test-Path $tmpDir) { Remove-Item -Path $tmpDir -Recurse -Force }
-    exit 1
+
+    Show-ExplorerAndSelectFile -filePath $zipPath
+    Write-Host "Portable package created: $zipPath" -ForegroundColor Green
+    Write-Host "Tip: install Inno Setup to also produce a .exe installer." -ForegroundColor Yellow
+    exit 0
 }
 
 Write-Host "Found ISCC: $iscc"
 
-# 生成 Inno 脚本放在 tmp 目录
-$issPath = Join-Path $tmpDir ("WinLoop_$versionName.iss")
+# 生成 Inno 脚本。放在独立的 iss 目录，避免被打进安装包
+$issDir = Join-Path -Path $tmpRoot ("iss_" + $versionName)
+if (Test-Path $issDir) { Remove-Item -Path $issDir -Recurse -Force }
+New-Item -Path $issDir -ItemType Directory | Out-Null
+
+$issPath = Join-Path $issDir ("WinLoop_$versionName.iss")
 $issContent = @"
 [Setup]
 AppName=WinLoop
@@ -261,6 +296,10 @@ Write-Host "Installer moved to: $destExe" -ForegroundColor Green
 if (Test-Path $tmpDir) {
     Remove-Item -Path $tmpDir -Recurse -Force
     Write-Host "Cleaned temp directory: $tmpDir" -ForegroundColor Green
+}
+if (Test-Path $issDir) {
+    Remove-Item -Path $issDir -Recurse -Force
+    Write-Host "Cleaned iss directory: $issDir" -ForegroundColor Green
 }
 
 # 在资源管理器中选中最终 exe

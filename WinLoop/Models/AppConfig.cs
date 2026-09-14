@@ -89,7 +89,12 @@ namespace WinLoop.Models
         TopRightQuadrant,
         BottomRightQuadrant,
         LeftTwoThirds,
-        RightTwoThirds
+        RightTwoThirds,
+        // 以下为 V0.2 新增。必须追加在末尾：WindowAction 会按序号持久化到 config.json，
+        // 插在中间会导致老用户的动作映射错位。
+        ToggleMaximize,
+        ToggleTopMost,
+        CloseWindow
     }
 
     public enum MenuItemPosition

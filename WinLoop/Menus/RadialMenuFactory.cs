@@ -8,9 +8,13 @@ namespace WinLoop.Menus
         {
             switch (menuStyle)
             {
+                case MenuStyle.CSHeadshotOctagon:
+                    return new CSHeadshotMenu();
+                case MenuStyle.SpiderWeb:
+                    return new SpiderWebMenu();
+                case MenuStyle.Bagua:
+                    return new BaguaMenu();
                 case MenuStyle.BasicRadial:
-                    return new BasicRadialMenu();
-                // Other menu styles are disabled; always fall back to the ring menu.
                 default:
                     return new BasicRadialMenu();
             }

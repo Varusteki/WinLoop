@@ -5,6 +5,8 @@
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Per-Monitor V2 DPI 感知：修复 125%/150% 缩放下的坐标错位 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <!-- Use the copied tray icon in WinLoop\Resources as the application icon and as a WPF resource -->

@@ -224,6 +224,7 @@ namespace WinLoop
                 // 订阅事件
                 _mouseHookService.MiddleButtonTriggered += OnMiddleButtonTriggered;
                 _mouseHookService.MiddleButtonReleased += OnMiddleButtonReleased;
+                _mouseHookService.MouseMoved += OnGlobalMouseMoved;
                 _keyboardHookService.HotkeyTriggered += OnXuanKongSiTriggered;
                 _keyboardHookService.EscapePressed += OnXuanKongSiEscape;
 
@@ -422,13 +423,42 @@ namespace WinLoop
         {
             try
             {
-                Log($"Action selected: {action}");
-                _windowManagementService?.ExecuteAction(action);
+                // 使用中键按下瞬间锁定的目标窗口，而不是此刻的前台窗口。
+                // 菜单弹出后前台窗口可能已变成菜单自身或别的窗口，实时取值会打错对象。
+                IntPtr target = _mouseHookService?.TargetWindow ?? IntPtr.Zero;
+                Log($"Action selected: {action}, target window: {target}");
+                _windowManagementService?.ExecuteAction(action, target);
             }
             catch (Exception ex)
             {
                 Log($"OnActionSelected error: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 全局鼠标移动（钩子推送）。仅在菜单可见时转发给菜单窗口更新高亮。
+        /// </summary>
+        private void OnGlobalMouseMoved(Point position)
+        {
+            try
+            {
+                var overlay = _menuOverlayWindow;
+                if (overlay != null && overlay.IsVisible)
+                {
+                    // 钩子回调运行在钩子线程，需切回 UI 线程操作 WPF 元素
+                    overlay.Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Input,
+                        new Action(() =>
+                        {
+                            try
+                            {
+                                overlay.UpdateHighlightFromScreen(position);
+                            }
+                            catch { }
+                        }));
+                }
+            }
+            catch { }
         }
 
         protected override void OnExit(ExitEventArgs e)

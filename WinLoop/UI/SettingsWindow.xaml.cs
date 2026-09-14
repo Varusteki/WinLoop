@@ -90,6 +90,9 @@ namespace WinLoop.UI
             
             // 添加菜单样式选择事件
             BasicRadialRadio.Checked += MenuStyle_Checked;
+            CSHeadshotRadio.Checked += MenuStyle_Checked;
+            SpiderWebRadio.Checked += MenuStyle_Checked;
+            BaguaRadio.Checked += MenuStyle_Checked;
 
             // 画布大小改变时更新预览
             PreviewCanvas.SizeChanged += (s, e) => UpdatePreview();
@@ -150,7 +153,10 @@ namespace WinLoop.UI
                     new { Key = WindowAction.TopRightQuadrant, Label = "右上分屏" },
                     new { Key = WindowAction.BottomRightQuadrant, Label = "右下分屏" },
                     new { Key = WindowAction.LeftTwoThirds, Label = "左三分之二屏" },
-                    new { Key = WindowAction.RightTwoThirds, Label = "右三分之二屏" }
+                    new { Key = WindowAction.RightTwoThirds, Label = "右三分之二屏" },
+                    new { Key = WindowAction.ToggleMaximize, Label = "最大化/还原切换" },
+                    new { Key = WindowAction.ToggleTopMost, Label = "窗口置顶切换" },
+                    new { Key = WindowAction.CloseWindow, Label = "关闭窗口" }
                 };
 
                 // 只初始化当前位置的下拉框
@@ -493,11 +499,23 @@ namespace WinLoop.UI
             {
                 if (_config == null) return;
 
-                // Only keep the ring menu available; force style to BasicRadial
-                _config.MenuStyle = MenuStyle.BasicRadial;
-
-                // 菜单样式仅保留圆环，隐藏其他选项
-                BasicRadialRadio.IsChecked = true;
+                // 恢复配置中的菜单样式选择
+                switch (_config.MenuStyle)
+                {
+                    case MenuStyle.CSHeadshotOctagon:
+                        CSHeadshotRadio.IsChecked = true;
+                        break;
+                    case MenuStyle.SpiderWeb:
+                        SpiderWebRadio.IsChecked = true;
+                        break;
+                    case MenuStyle.Bagua:
+                        BaguaRadio.IsChecked = true;
+                        break;
+                    default:
+                        _config.MenuStyle = MenuStyle.BasicRadial;
+                        BasicRadialRadio.IsChecked = true;
+                        break;
+                }
 
                 BasicOuterRadiusBox.Text = ((int)_config.BasicRadialMenuConfig.OuterRadius).ToString();
                 BasicInnerRadiusBox.Text = ((int)_config.BasicRadialMenuConfig.InnerRadius).ToString();
@@ -596,9 +614,12 @@ namespace WinLoop.UI
         {
             try
             {
-                // 保存菜单样式（仅圆环可用）
-                _config.MenuStyle = MenuStyle.BasicRadial;
-                
+                // 保存菜单样式
+                if (CSHeadshotRadio.IsChecked == true) _config.MenuStyle = MenuStyle.CSHeadshotOctagon;
+                else if (SpiderWebRadio.IsChecked == true) _config.MenuStyle = MenuStyle.SpiderWeb;
+                else if (BaguaRadio.IsChecked == true) _config.MenuStyle = MenuStyle.Bagua;
+                else _config.MenuStyle = MenuStyle.BasicRadial;
+
                 // 保存基础环形菜单配置（从文本框读取正整数）
                 if (int.TryParse(BasicOuterRadiusBox.Text, out var bo)) _config.BasicRadialMenuConfig.OuterRadius = bo;
                 if (int.TryParse(BasicInnerRadiusBox.Text, out var bi)) _config.BasicRadialMenuConfig.InnerRadius = bi;
@@ -703,15 +724,21 @@ namespace WinLoop.UI
         {
             // 切换配置面板显示并更新预览
             UpdateConfigPanels();
-            // 更新 _config.MenuStyle，仅允许圆环
-            _config.MenuStyle = MenuStyle.BasicRadial;
-            BasicRadialRadio.IsChecked = true;
+
+            // 根据被选中的单选按钮更新样式
+            if (CSHeadshotRadio.IsChecked == true) _config.MenuStyle = MenuStyle.CSHeadshotOctagon;
+            else if (SpiderWebRadio.IsChecked == true) _config.MenuStyle = MenuStyle.SpiderWeb;
+            else if (BaguaRadio.IsChecked == true) _config.MenuStyle = MenuStyle.Bagua;
+            else _config.MenuStyle = MenuStyle.BasicRadial;
+            App.Log($"Menu style selected: {_config.MenuStyle}");
 
             UpdatePreview();
         }
 
         private void UpdateConfigPanels()
         {
+            // 各样式目前共用同一套环形菜单参数（外/内半径、颜色），
+            // 因此配置面板保持可见；后续若各样式有独立参数，在此按样式切换 Grid 可见性。
             BasicRadialConfigGrid.Visibility = Visibility.Visible;
         }
 
@@ -936,6 +963,9 @@ namespace WinLoop.UI
                 case WindowAction.BottomRightQuadrant: return "右下分屏";
                 case WindowAction.LeftTwoThirds: return "左三分之二屏";
                 case WindowAction.RightTwoThirds: return "右三分之二屏";
+                case WindowAction.ToggleMaximize: return "最大化/还原切换";
+                case WindowAction.ToggleTopMost: return "窗口置顶切换";
+                case WindowAction.CloseWindow: return "关闭窗口";
                 default: return act.ToString();
             }
         }

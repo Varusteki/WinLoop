@@ -2,7 +2,7 @@
 
 适用于 Windows 平台的快捷窗口管理工具 - 按住鼠标中键，快速管理窗口！
 （本项目代码完全用AI编写）
-[![Version](https://img.shields.io/badge/version-0.1-blue.svg)](#)
+[![Version](https://img.shields.io/badge/version-0.2-blue.svg)](#)
 [![.NET](https://img.shields.io/badge/.NET%20Core-3.1-purple.svg)](https://dotnet.microsoft.com/)
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-brightgreen.svg)](https://www.microsoft.com/windows)
 
@@ -11,15 +11,15 @@
 ### 🎯 一键操作
 只需按住鼠标中键，移动鼠标选择操作，松开即可完成窗口管理 - 无需记忆复杂的键盘快捷键！
 
-### 🎨 Loop 风格菜单
-- **简洁环形设计**：圆环底色 + 蓝色高亮选中
-- **透明扇区**：不遮挡屏幕内容
-- **8 个方向**：覆盖常用窗口操作
-
-> 说明：当前版本仅开放“圆环（BasicRadial）”菜单样式（为了稳定性，设置页与工厂会强制使用圆环菜单）。
+### 🎨 4 种菜单样式
+- **圆环（BasicRadial）**：圆环底色 + 蓝色高亮选中，简洁直观
+- **八角星（CSHeadshotOctagon）**：硬朗的八角星布局
+- **蜘蛛网（SpiderWeb）**：多层同心环 + 放射线
+- **八卦（Bagua）**：八卦图形风格
 
 ### 🪟 丰富的窗口操作
 - **基础操作**：最小化、最大化、显示桌面 (Win+D)
+- **窗口状态**：最大化/还原切换、窗口置顶切换、关闭窗口
 - **半屏分屏**：左/右/上/下 半屏
 - **四分屏**：左上/左下/右上/右下 四个象限
 - **三分之二屏**：左/右 2/3 屏幕（适合多任务）
@@ -39,11 +39,11 @@
 ## 🚀 快速开始
 
 ### 安装
-1. 下载最新安装包（`release/WinLoop_V0.1-YYYYMMDDHHMMSS.exe`）
+1. 下载最新安装包（`release/WinLoop_V0.2-YYYYMMDDHHMMSS.exe`）
 2. 安装并运行 `WinLoop`
 3. 程序将在系统托盘运行
 
-（可选）如果你需要免安装版本，可使用 `build/V0.1-YYYYMMDDHHMMSS/` 目录下的发布产物。
+（可选）如果你需要免安装版本，可使用 `build/V0.2-YYYYMMDDHHMMSS/` 目录下的发布产物。
 
 ### 基本使用
 1. **显示菜单**：按住鼠标中键约 0.2 秒
@@ -90,11 +90,11 @@ dotnet build WinLoop\WinLoop.csproj -c Debug
 
 # 正式版本编译（带版本号）
 .\build.ps1
-# 输出: ./build/V0.1-{日期时间}/
+# 输出: ./build/V0.2-{日期时间}/
 
-# 打包安装程序
+# 打包安装程序（需要 Inno Setup）
 .\release.ps1
-# 输出: ./release/WinLoop_V0.1-{日期时间}.exe
+# 输出: ./release/WinLoop_V0.2-{日期时间}.exe
 ```
 
 ### 项目结构
@@ -102,12 +102,15 @@ dotnet build WinLoop\WinLoop.csproj -c Debug
 WinLoop/
 ├── WinLoop/                    # 主项目代码
 │   ├── App.xaml.cs            # 应用入口、系统托盘、事件处理
+│   ├── app.manifest           # Per-Monitor V2 DPI 感知声明
 │   ├── Config/                # 配置管理
 │   │   └── ConfigManager.cs   # JSON 配置读写
-│   ├── Core/                  # 核心逻辑
 │   ├── Menus/                 # 菜单样式实现
 │   │   ├── RadialMenu.cs      # 菜单基类
 │   │   ├── BasicRadialMenu.cs # Loop 风格环形菜单
+│   │   ├── CSHeadshotMenu.cs  # 八角星菜单
+│   │   ├── SpiderWebMenu.cs   # 蜘蛛网菜单
+│   │   ├── BaguaMenu.cs       # 八卦菜单
 │   │   └── RadialMenuFactory.cs
 │   ├── Models/                # 数据模型
 │   │   └── AppConfig.cs       # 配置数据结构
@@ -116,10 +119,11 @@ WinLoop/
 │   │   ├── XuanKongSiOverlayWindow.xaml  # 悬空寺覆盖层窗口
 │   │   └── SettingsWindow.xaml     # 设置窗口
 │   ├── SystemIntegration/     # 系统集成
-│   │   ├── MouseHookService.cs     # 全局鼠标钩子
+│   │   ├── MouseHookService.cs     # 全局鼠标钩子（含目标窗口锁定、鼠标移动推送）
+│   │   ├── KeyboardHookService.cs  # 全局键盘钩子
 │   │   ├── WindowManagementService.cs  # 窗口操作
 │   │   └── AutoStartManager.cs     # 开机自启管理
-│   └── Utils/                 # 工具类
+│   └── Resources/             # 托盘图标等资源
 ├── build/                     # 编译输出
 ├── release/                   # 发布版本
 ├── deprecated/                # 历史产物/归档（可选删除）
@@ -132,7 +136,7 @@ WinLoop/
 - [技术设计文档](WinLoop_Technical_Design.md)
 ## 🗺️ 开发路线图
 
-### ✅ V0.1 (当前版本)
+### ✅ V0.1
 - [x] 设置窗口（菜单样式、操作配置、杂项设置）
 - [x] Loop 风格环形菜单（白色轮廓 + 蓝色高亮）
 - [x] 全局鼠标钩子（中键按下/释放检测）
@@ -144,11 +148,15 @@ WinLoop/
 - [x] 悬空寺（XuanKongSi）覆盖层（图片 / Markdown 文字）
 - [x] 自定义悬空寺触发键（左右 Alt / 左右 Shift / 左右 Ctrl）
 
-### 🔜 V0.2 (计划中)
-- [ ] 多显示器支持优化
-- [ ] 菜单动画效果
-- [ ] 更多窗口操作选项
-- [ ] 性能优化
+### ✅ V0.2 (当前版本)
+- [x] **目标窗口锁定**：中键按下瞬间锁定窗口，菜单弹出后不再误操作其它窗口
+- [x] **性能优化**：移除分屏时的 50ms 阻塞等待
+- [x] **多显示器 / 高 DPI 支持**：Per-Monitor V2 DPI 感知 + 物理像素坐标统一
+- [x] **鼠标跟随优化**：由 16ms 轮询改为钩子事件推送
+- [x] **菜单动画**：弹出缩放淡入 / 收起淡出
+- [x] **更多窗口操作**：最大化还原切换、窗口置顶切换、关闭窗口
+- [x] **恢复 4 种菜单样式**：圆环 / 八角星 / 蜘蛛网 / 八卦
+- [x] **代码清理**：移除约 500 行不可达代码
 
 ### 🔮 V0.3+ (未来)
 - [ ] 手势识别
