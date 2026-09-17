@@ -314,7 +314,6 @@ namespace WinLoop.SystemIntegration
 
         private const uint WM_SYSCOMMAND = 0x0112;
         private static readonly IntPtr SC_CLOSE = new IntPtr(0xF060);
-        private static readonly IntPtr SC_MINIMIZE_ = new IntPtr(0xF020);
 
         private const int SW_SHOWMINIMIZED_ = 2;
         private const int SW_SHOWMAXIMIZED_ = 3;
@@ -348,8 +347,15 @@ namespace WinLoop.SystemIntegration
         private void MinimizeWindow(IntPtr hwnd)
         {
             if (hwnd == IntPtr.Zero) return;
-            // 用 SYSCOMMAND 而非直接 ShowWindow，让窗口走正常的最小化流程
-            PostMessage(hwnd, WM_SYSCOMMAND, SC_MINIMIZE_, IntPtr.Zero);
+
+            // 注意：这里不能用 PostMessage(WM_SYSCOMMAND, SC_MINIMIZE)。
+            // WM_SYSCOMMAND/SC_MINIMIZE 是"用户主动点了标题栏最小化按钮"的语义，
+            // Windows 会校验消息发起者与目标窗口的前台关系；而菜单弹出时覆盖窗口
+            // 执行了 Activate()/Focus()/Mouse.Capture()，已经抢走前台，消息会被忽略。
+            // 症状：软件刚启动的一两分钟内（ForegroundLockTimeout 保护期内）P5 无效，
+            // 之后锁放开才恢复。ShowWindowAsync 直接设置窗口状态，不依赖前台，
+            // 与 MaximizeWindow / ToggleMaximizeWindow 的实现保持一致。
+            ShowWindowAsync(hwnd, SW_MINIMIZE);
         }
 
         private void MaximizeWindow(IntPtr hwnd)

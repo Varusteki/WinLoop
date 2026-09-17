@@ -5,33 +5,51 @@ using WinLoop.Models;
 
 namespace WinLoop.Menus
 {
-    #if false
     /// <summary>
     /// 蜘蛛网菜单 - 参考真实蜘蛛网样式
     /// 8条辐射线 + 向内凹陷的弧形环线
     /// </summary>
     public class SpiderWebMenu : RadialMenu
     {
-        private const int ITEM_COUNT = 8;
-        private const double ANGLE_STEP = 2 * Math.PI / ITEM_COUNT;
-        // 起始角度：让位置1（Top）的对称轴在12点钟方向
-        // 辐射线在扇区边界，位置1中心需在-π/2，所以起始角度要减去半个扇区
-        private const double START_ANGLE = -Math.PI / 2 - ANGLE_STEP / 2;
-        
+        private const int ITEM_COUNT = SectorCount;   // 8 个方向
+        private const double ANGLE_STEP = 2 * Math.PI / ITEM_COUNT;   // 45°
+        // 起始角度：辐射线画在扇区边界上，所以起始边 = 第 0 个扇区（Position1）
+        // 的中心 − 半个扇区。中心方向由基类统一给出（正上方），判定与绘制同源。
+        private const double START_ANGLE = (FirstSectorAxisDeg - HalfSectorDeg) * Math.PI / 180.0;
+
+        // 绘制留白系数：外扩到 1.1 倍，给最外层环线留出边距
+        private const double RADIUS_SCALE = 1.1;
+
         private MenuItemPosition? _highlightedPosition;
         private double _outerRadius;
         private Point _center;
 
         protected override void InitializeMenu()
         {
-            _outerRadius = Config.SpiderWebMenuConfig.OuterRadius;
-            
-            this.Width = _outerRadius * 2.2;
-            this.Height = _outerRadius * 2.2;
-            _center = new Point(_outerRadius * 1.1, _outerRadius * 1.1);
-            
+            _outerRadius = Scaled(Config.SpiderWebMenuConfig.OuterRadius);
+
+            this.Width = _outerRadius * RADIUS_SCALE * 2;
+            this.Height = _outerRadius * RADIUS_SCALE * 2;
+            _center = new Point(_outerRadius * RADIUS_SCALE, _outerRadius * RADIUS_SCALE);
+
+            // 把自己的真实半尺寸报告给外部，供定位与命中使用
+            this.VisualRadius = _outerRadius * RADIUS_SCALE;
+
+            // 中心死区 = 中心第一个八边形。环线间距是 _outerRadius / (rings + 1)，
+            // 第一条环线（ring = 1）就落在该半径上；rings 配置异常时按 1 兜底。
+            int rings = Config.SpiderWebMenuConfig.Rings;
+            if (rings < 1) rings = 1;
+            _deadZoneRadius = _outerRadius / (rings + 1);
+
             InvalidateVisual();
         }
+
+        /// <summary>
+        /// 中心死区 = 蛛网中心第一个八边形之内。
+        /// </summary>
+        public override double CenterDeadZoneRadius => _deadZoneRadius;
+
+        private double _deadZoneRadius;
 
         protected override void OnRender(DrawingContext dc)
         {
@@ -157,29 +175,9 @@ namespace WinLoop.Menus
             );
         }
 
-        public override MenuItemPosition? GetSelectedItem(Point mousePosition)
-        {
-            // 菜单中心点是 (_outerRadius * 1.1, _outerRadius * 1.1)
-            double centerX = _outerRadius * 1.1;
-            double centerY = _outerRadius * 1.1;
-            
-            double dx = mousePosition.X - centerX;
-            double dy = mousePosition.Y - centerY;
-            double distance = Math.Sqrt(dx * dx + dy * dy);
-            
-            // 太靠近中心或太远都不选中
-            if (distance < _outerRadius * 0.15 || distance > _outerRadius * 1.1)
-                return null;
-            
-            // 计算角度，考虑START_ANGLE的偏移
-            double angle = Math.Atan2(dy, dx);
-            // 将角度转换为相对于START_ANGLE的位置
-            double relativeAngle = angle - START_ANGLE;
-            if (relativeAngle < 0) relativeAngle += 2 * Math.PI;
-            
-            int sector = (int)(relativeAngle / ANGLE_STEP) % 8;
-            return (MenuItemPosition)sector;
-        }
+        // 命中判定不在这里实现：GetSelectedItem 由基类 RadialMenu 统一提供
+        // （「中心 → 指针」的方向落在哪个扇区就选哪个，与距离无关）。
+        // 蛛网的判定因此和其余三种样式是**同一份代码**，本类只负责展示形式。
 
         public override void HighlightItem(MenuItemPosition itemPosition)
         {
@@ -191,28 +189,6 @@ namespace WinLoop.Menus
         {
             _highlightedPosition = null;
             InvalidateVisual();
-        }
-    }
-    #endif
-
-    // Stubbed to disable non-ring style while keeping compile compatibility
-    public class SpiderWebMenu : RadialMenu
-    {
-        protected override void InitializeMenu()
-        {
-            // Spider web menu disabled
-        }
-
-        public override MenuItemPosition? GetSelectedItem(Point mousePosition) => null;
-
-        public override void HighlightItem(MenuItemPosition itemPosition)
-        {
-            // No-op
-        }
-
-        public override void ClearHighlight()
-        {
-            // No-op
         }
     }
 }

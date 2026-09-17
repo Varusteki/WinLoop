@@ -1,6 +1,9 @@
-# Release packaging script (Inno Setup)
+﻿# Release packaging script (Inno Setup)
 # Flow: run build.ps1 -> copy output to ./tmp/<version> -> compile installer via ISCC -> move final exe to ./release -> cleanup tmp
 # If ISCC is unavailable, fall back to producing a portable .zip in ./release (unless -NoZipFallback).
+#
+# 只负责打包，不打开资源管理器。
+# 「打包完打开产物目录并选中安装包」由上层作业脚本负责：job-pack.ps1
 
 param(
     [string]$BuildScript = "./build.ps1",
@@ -24,128 +27,6 @@ if ($scriptPath) {
 
 $baseDir = (Get-Location).ProviderPath
 
-function Ensure-ForegroundWindow([IntPtr]$hWnd)
-{
-    try
-    {
-        if ($hWnd -eq [IntPtr]::Zero) { return }
-
-        if (-not ([System.Management.Automation.PSTypeName]'WinLoopNative.User32').Type)
-        {
-            Add-Type -Namespace WinLoopNative -Name User32 -MemberDefinition @"
-using System;
-using System.Runtime.InteropServices;
-
-public static class User32
-{
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-}
-"@
-        }
-
-        # Restore (9) and bring to foreground.
-        [WinLoopNative.User32]::ShowWindowAsync($hWnd, 9) | Out-Null
-        [WinLoopNative.User32]::SetForegroundWindow($hWnd) | Out-Null
-    }
-    catch { }
-}
-
-function Get-ExplorerWindowForFolder([string]$folderPath)
-{
-    try
-    {
-        if (-not $folderPath) { return $null }
-        if (-not (Test-Path -LiteralPath $folderPath)) { return $null }
-
-        $target = (Resolve-Path -LiteralPath $folderPath).Path.TrimEnd('\\')
-        $shell = New-Object -ComObject Shell.Application
-
-        foreach ($w in @($shell.Windows()))
-        {
-            try
-            {
-                if (-not $w) { continue }
-                $fullName = [string]$w.FullName
-                if (-not $fullName) { continue }
-                if ([System.IO.Path]::GetFileName($fullName) -ne 'explorer.exe') { continue }
-
-                $url = [string]$w.LocationURL
-                if (-not $url) { continue }
-
-                $localPath = ([uri]$url).LocalPath
-                if (-not $localPath) { continue }
-                $localPath = [System.IO.Path]::GetFullPath($localPath).TrimEnd('\\')
-
-                if ($localPath -ieq $target) { return $w }
-            }
-            catch { }
-        }
-    }
-    catch { }
-
-    return $null
-}
-
-function Close-ExplorerWindowsForFolder([string]$folderPath)
-{
-    try
-    {
-        if (-not $folderPath) { return }
-        if (-not (Test-Path -LiteralPath $folderPath)) { return }
-
-        $target = (Resolve-Path -LiteralPath $folderPath).Path.TrimEnd('\\')
-        $shell = New-Object -ComObject Shell.Application
-
-        foreach ($w in @($shell.Windows()))
-        {
-            try
-            {
-                if (-not $w) { continue }
-                $fullName = [string]$w.FullName
-                if (-not $fullName) { continue }
-                if ([System.IO.Path]::GetFileName($fullName) -ne 'explorer.exe') { continue }
-
-                $url = [string]$w.LocationURL
-                if (-not $url) { continue }
-
-                $localPath = ([uri]$url).LocalPath
-                if (-not $localPath) { continue }
-                $localPath = [System.IO.Path]::GetFullPath($localPath).TrimEnd('\\')
-
-                if ($localPath -ieq $target)
-                {
-                    # Close the Explorer window.
-                    $w.Quit()
-                }
-            }
-            catch { }
-        }
-    }
-    catch { }
-}
-
-function Show-ExplorerAndSelectFile([string]$filePath)
-{
-    try
-    {
-        if (-not $filePath) { return }
-        if (-not (Test-Path -LiteralPath $filePath)) { return }
-
-        $resolvedFile = (Resolve-Path -LiteralPath $filePath).Path
-        $folder = Split-Path -Parent $resolvedFile
-
-        # Simple + reliable: close any already-open Explorer windows at target folder,
-        # then open a fresh one selecting the new artifact.
-        Close-ExplorerWindowsForFolder -folderPath $folder
-        Start-Process explorer.exe -ArgumentList "/select,`"$resolvedFile`""
-    }
-    catch { }
-}
-
 Write-Host "Starting release packaging..."
 
 # 检查构建脚本（支持相对路径：相对于 release.ps1 所在目录）
@@ -159,9 +40,9 @@ if (-not (Test-Path -LiteralPath $buildScriptPath)) {
     exit 1
 }
 
-# 调用构建脚本（传入 -NoOpen 禁止自动打开 Explorer）
-Write-Host "Running build script: $buildScriptPath -NoOpen"
-& powershell -NoProfile -ExecutionPolicy Bypass -File $buildScriptPath -NoOpen -Version $Version
+# 调用构建脚本（build.ps1 自身不打开窗口，打开由上层作业脚本负责）
+Write-Host "Running build script: $buildScriptPath -Version $Version"
+& powershell -NoProfile -ExecutionPolicy Bypass -File $buildScriptPath -Version $Version
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Build script failed, aborting packaging." -ForegroundColor Red
     exit 1
@@ -230,7 +111,6 @@ if (-not $iscc) {
 
     if (Test-Path $tmpDir) { Remove-Item -Path $tmpDir -Recurse -Force }
 
-    Show-ExplorerAndSelectFile -filePath $zipPath
     Write-Host "Portable package created: $zipPath" -ForegroundColor Green
     Write-Host "Tip: install Inno Setup to also produce a .exe installer." -ForegroundColor Yellow
     exit 0
@@ -301,8 +181,5 @@ if (Test-Path $issDir) {
     Remove-Item -Path $issDir -Recurse -Force
     Write-Host "Cleaned iss directory: $issDir" -ForegroundColor Green
 }
-
-# 在资源管理器中选中最终 exe
-Show-ExplorerAndSelectFile -filePath $destExe
 
 Write-Host "Release packaging complete: $destExe"

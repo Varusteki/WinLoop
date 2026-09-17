@@ -5,18 +5,28 @@ using WinLoop.Models;
 
 namespace WinLoop.Menus
 {
-    #if false
     /// <summary>
     /// 八卦图菜单 - 正八边形样式（参考传统八卦图）
     /// 中心太极图 + 双线正八边形框架 + 填充矩形爻
     /// </summary>
     public class BaguaMenu : RadialMenu
     {
-        private const int ITEM_COUNT = 8;
-        private const double ANGLE_STEP = 2 * Math.PI / ITEM_COUNT;
-        // 起始角度：让位置1（Top/北）的对称轴在12点钟方向
-        private const double START_ANGLE = -Math.PI / 2 - ANGLE_STEP / 2;
-        
+        private const int ITEM_COUNT = SectorCount;   // 8 个方向
+        private const double ANGLE_STEP = 2 * Math.PI / ITEM_COUNT;   // 45°
+        // 起始角度：卦格画在扇区边界之间，所以起始边 = 第 0 个扇区（Position1，北/坎）
+        // 的中心 − 半个扇区。中心方向由基类统一给出（正上方），判定与绘制同源。
+        private const double START_ANGLE = (FirstSectorAxisDeg - HalfSectorDeg) * Math.PI / 180.0;
+
+        // 绘制留白系数：外扩到 1.2 倍，给卦名标签留出边距
+        private const double RADIUS_SCALE = 1.2;
+
+        /// <summary>
+        /// 中心太极图半径相对 _outerRadius 的系数。
+        /// **绘制（DrawTaiChi）与中心死区（CenterDeadZoneRadius）共用这一个来源**，
+        /// 改一处即可，不会出现"死区与画出来的太极不一样大"。
+        /// </summary>
+        private const double TAICHI_RADIUS_SCALE = 0.32;
+
         private MenuItemPosition? _highlightedPosition;
         private double _outerRadius;
         private Point _center;
@@ -43,14 +53,27 @@ namespace WinLoop.Menus
 
         protected override void InitializeMenu()
         {
-            _outerRadius = Config.BaguaMenuConfig.OuterRadius;
-            
-            this.Width = _outerRadius * 2.4;
-            this.Height = _outerRadius * 2.4;
-            _center = new Point(_outerRadius * 1.2, _outerRadius * 1.2);
-            
+            _outerRadius = Scaled(Config.BaguaMenuConfig.OuterRadius);
+
+            this.Width = _outerRadius * RADIUS_SCALE * 2;
+            this.Height = _outerRadius * RADIUS_SCALE * 2;
+            _center = new Point(_outerRadius * RADIUS_SCALE, _outerRadius * RADIUS_SCALE);
+
+            // 把自己的真实半尺寸报告给外部，供定位与命中使用
+            this.VisualRadius = _outerRadius * RADIUS_SCALE;
+
+            // 中心死区 = 太极图范围。半径系数与 DrawTaiChi 里的 taichiRadius 必须一致。
+            _deadZoneRadius = _outerRadius * TAICHI_RADIUS_SCALE;
+
             InvalidateVisual();
         }
+
+        /// <summary>
+        /// 中心死区 = 太极图之内。
+        /// </summary>
+        public override double CenterDeadZoneRadius => _deadZoneRadius;
+
+        private double _deadZoneRadius;
 
         protected override void OnRender(DrawingContext dc)
         {
@@ -291,7 +314,7 @@ namespace WinLoop.Menus
         /// </summary>
         private void DrawTaiChi(DrawingContext dc, Color lineColor)
         {
-            double taichiRadius = _outerRadius * 0.32;
+            double taichiRadius = _outerRadius * TAICHI_RADIUS_SCALE;
             
             Brush blackBrush = new SolidColorBrush(lineColor);
             Brush whiteBrush = Brushes.White;
@@ -403,28 +426,10 @@ namespace WinLoop.Menus
             dc.DrawGeometry(brush, null, geometry);
         }
 
-        public override MenuItemPosition? GetSelectedItem(Point mousePosition)
-        {
-            // 菜单中心点是 (_outerRadius * 1.2, _outerRadius * 1.2)
-            double centerX = _outerRadius * 1.2;
-            double centerY = _outerRadius * 1.2;
-            
-            double dx = mousePosition.X - centerX;
-            double dy = mousePosition.Y - centerY;
-            double distance = Math.Sqrt(dx * dx + dy * dy);
-            
-            // 太极图区域或太远都不选中
-            if (distance < _outerRadius * 0.35 || distance > _outerRadius * 1.1)
-                return null;
-            
-            // 计算角度
-            double angle = Math.Atan2(dy, dx);
-            double relativeAngle = angle - START_ANGLE;
-            if (relativeAngle < 0) relativeAngle += 2 * Math.PI;
-            
-            int sector = (int)(relativeAngle / ANGLE_STEP) % 8;
-            return (MenuItemPosition)sector;
-        }
+        // 命中判定不在这里实现：GetSelectedItem 由基类 RadialMenu 统一提供
+        // （「中心 → 指针」的方向落在哪个扇区就选哪个，与距离无关）。
+        // 八卦的判定因此和其余三种样式是**同一份代码**（太极图区域也参与选择），
+        // 本类只负责「高亮画成该卦的格子」这个展示形式。
 
         public override void HighlightItem(MenuItemPosition itemPosition)
         {
@@ -436,28 +441,6 @@ namespace WinLoop.Menus
         {
             _highlightedPosition = null;
             InvalidateVisual();
-        }
-    }
-    #endif
-
-    // Stubbed to disable non-ring style while keeping compile compatibility
-    public class BaguaMenu : RadialMenu
-    {
-        protected override void InitializeMenu()
-        {
-            // Bagua menu disabled
-        }
-
-        public override MenuItemPosition? GetSelectedItem(Point mousePosition) => null;
-
-        public override void HighlightItem(MenuItemPosition itemPosition)
-        {
-            // No-op
-        }
-
-        public override void ClearHighlight()
-        {
-            // No-op
         }
     }
 }

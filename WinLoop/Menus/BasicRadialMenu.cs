@@ -13,27 +13,43 @@ namespace WinLoop.Menus
         private readonly List<Path> _menuItems = new List<Path>();
         private Path _highlightedItem;
         private Path _ringPath; // 底层圆环
-        private const int ITEM_COUNT = 8;
-        // 将起始角度左移半个扇区，使索引 0 的扇区中心位于正上方（12 点钟）
-        private const double BASE_ANGLE = -Math.PI / 2 - Math.PI / ITEM_COUNT;
-        private const double ANGLE_STEP = 2 * Math.PI / ITEM_COUNT;
+        private const int ITEM_COUNT = SectorCount;   // 8 个方向
+        private const double ANGLE_STEP = 2 * Math.PI / ITEM_COUNT;   // 45°
+        // 扇区起始边 = 第 0 个扇区（Position1）的中心 − 半个扇区。
+        // 中心方向由基类统一给出（正上方），所以判定与绘制不会再错位半个扇区。
+        private const double BASE_ANGLE = (FirstSectorAxisDeg - HalfSectorDeg) * Math.PI / 180.0;
 
         protected override void InitializeMenu()
         {
-            this.Width = Config.BasicRadialMenuConfig.OuterRadius * 2;
-            this.Height = Config.BasicRadialMenuConfig.OuterRadius * 2;
-            
+            double outerRadius = Scaled(Config.BasicRadialMenuConfig.OuterRadius);
+            this.Width = outerRadius * 2;
+            this.Height = outerRadius * 2;
+            this.VisualRadius = outerRadius;
+
+            // 内圆半径要与 DrawMenu 用的是同一个（厚度无效时退化为 外半径−内半径）
+            double thickness = Scaled(Config.BasicRadialMenuConfig.Thickness);
+            if (thickness <= 0) thickness = Math.Max(0, outerRadius - Scaled(Config.BasicRadialMenuConfig.InnerRadius));
+            _innerRadius = Math.Max(0, outerRadius - thickness);
+
             DrawMenu();
         }
+
+        /// <summary>
+        /// 中心死区 = 内圆之内。圆环的可见图形就是「外圆 − 内圆」这条环带，
+        /// 指针退回到内圆里面就当作反悔。
+        /// </summary>
+        public override double CenterDeadZoneRadius => _innerRadius;
+
+        private double _innerRadius;
 
         private void DrawMenu()
         {
             this.Children.Clear();
             _menuItems.Clear();
             
-            double outerRadius = Config.BasicRadialMenuConfig.OuterRadius;
-            double thickness = Config.BasicRadialMenuConfig.Thickness;
-            if (thickness <= 0) thickness = Math.Max(0, outerRadius - Config.BasicRadialMenuConfig.InnerRadius);
+            double outerRadius = Scaled(Config.BasicRadialMenuConfig.OuterRadius);
+            double thickness = Scaled(Config.BasicRadialMenuConfig.Thickness);
+            if (thickness <= 0) thickness = Math.Max(0, outerRadius - Scaled(Config.BasicRadialMenuConfig.InnerRadius));
             double innerRadius = Math.Max(0, outerRadius - thickness);
             
             // 解析颜色
@@ -141,34 +157,10 @@ namespace WinLoop.Menus
             return path;
         }
 
-        public override MenuItemPosition? GetSelectedItem(Point mousePosition)
-        {
-            if (this.Children.Count == 0) return null;
-            
-            double outerRadius = Config.BasicRadialMenuConfig.OuterRadius;
-            double innerRadius = Config.BasicRadialMenuConfig.InnerRadius;
-            
-            // 菜单中心点
-            double centerX = outerRadius;
-            double centerY = outerRadius;
-            
-            double dx = mousePosition.X - centerX;
-            double dy = mousePosition.Y - centerY;
-            double distance = Math.Sqrt(dx * dx + dy * dy);
-            
-            // 检查是否在有效范围内
-            if (distance < innerRadius || distance > outerRadius)
-                return null;
-            
-            // 计算角度（从12点钟方向开始，顺时针）
-            double angle = Math.Atan2(dy, dx);
-            // 转换为相对于BASE_ANGLE的位置
-            double relativeAngle = angle - BASE_ANGLE;
-            if (relativeAngle < 0) relativeAngle += 2 * Math.PI;
-            
-            int sector = (int)(relativeAngle / ANGLE_STEP) % ITEM_COUNT;
-            return (MenuItemPosition)sector;
-        }
+        // 命中判定不在这里实现：GetSelectedItem 由基类 RadialMenu 统一提供
+        // （「中心 → 指针」的方向落在哪个扇区就选哪个，与距离无关）。
+        // 圆环的判定因此和八角星、蜘蛛网、八卦是**同一份代码**，
+        // 本类只负责「高亮画成环带扇区」这个展示形式。
 
         public override void HighlightItem(MenuItemPosition itemPosition)
         {

@@ -1,452 +1,414 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Windows;
 using System.Windows.Media;
-using System.Windows.Media.Effects;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using WinLoop.Models;
 
 namespace WinLoop.Menus
 {
-    #if false
     /// <summary>
-    /// CF爆头图标菜单 - 中心骷髅头图片 + 外围八角星
-    /// 参考CF穿越火线爆头图标样式
+    /// 八角星菜单（CS「爆头」徽记风格）。
+    ///
+    /// **三层都是可以独立成立的完整图元**，叠印时上层的白底把下层盖住：
+    ///   ① 同心圆：两圈**完整**圆环
+    ///   ② 八角星：**严格几何构造** —— 标准星多边形（尖 / 谷交替，全直线边）
+    ///      再挖掉 8 个**三角孔**（每支尖被斜削一块，形成风车感）
+    ///   ③ 骷髅头：描摹自用户提供的 `抠图骷髅头.png`（剪影白底 + 墨迹 EvenOdd）
+    ///
+    /// 参考图只作**样式参考**（见 <see cref="CSHeadshotLayers"/> 的生成脚本）：
+    ///   - 星尖轴角用规整的 -90°+45°k；
+    ///   - 星完全由几何构造，**不含任何描摹数据**（8 个尖等半径、8 个谷等半径、
+    ///     8 个三角孔同参数），逐像素比对参考图差异率 3.0%；
+    ///   - 骷髅的轮廓、眼、鼻、齿都按参考图描摹。
+    ///
+    /// 选中高亮只发生在第二层，取该格扇区内的星（画在黑星之上、三角孔之下），
+    /// 再被第三层（骷髅）裁掉：
+    ///   高亮 = 星多边形 ∩ 该格 45° 扇区（随后三角孔与骷髅会各裁掉一部分）
+    /// 所以三角孔依然压在金色之上；纯色填充，不做渐变、不套辉光。
+    ///
+    /// 坐标系：原点 = 菜单中心，1.0 = 星尖顶点半径 R，y 轴向下为正。
     /// </summary>
     public class CSHeadshotMenu : RadialMenu
     {
-        private const int ITEM_COUNT = 8;
-        private const double ANGLE_STEP = 2 * Math.PI / ITEM_COUNT;
-        
-        private MenuItemPosition? _highlightedPosition;
-        private double _radius;
+        private const int ITEM_COUNT = SectorCount;             // 8 个方向
+
+        // 角度基准与扇区张角全部取自基类 RadialMenu：
+        // 判定与绘制因此共用同一份来源，不会再出现"一边改了另一边没改"而错位半个扇区。
+        private const double SECTOR_DEG = SectorDeg;            // 45°
+        private const double HALF_SECTOR_DEG = HalfSectorDeg;   // 22.5°
+
+        /// <summary>第 0 项（Position1）在屏幕坐标下的方向：正上方。</summary>
+        private const double BASE_ANGLE_DEG = FirstSectorAxisDeg;   // -90°
+
+        // ---- 命中判定 ----
+        // 本类不再自己实现判定：GetSelectedItem 由基类 RadialMenu 统一提供
+        // （「中心 → 指针」的方向落在哪个扇区就选哪个，与距离无关）。
+        // 八角星在这里没有任何特殊之处 —— 星臂、圆环空隙、中心骷髅都不参与判定。
+
+        /// <summary>菜单半尺寸在图形最大半径上的额外留白，防止尖角被裁。</summary>
+        private const double EXTENT_MARGIN = 1.02;
+
+        /// <summary>盖接缝用的描边宽度（归一化单位）。</summary>
+        private const double SEAM_STROKE = 0.006;
+
+        /// <summary>高亮格内那道缝的暗金系数（对高亮色做线性压暗，0 = 全黑，1 = 同色）。</summary>
+        private const double HIGHLIGHT_SHADOW_FACTOR = 0.62;
+
+        // ---------- 静态几何缓存（与半径无关，只建一次） ----------
+        private static readonly object Gate = new object();
+        private static bool _geometryReady;
+
+        private static Geometry _bodyGeometry;   // 整体外轮廓（底衬）
+        private static Geometry _ringBody;       // ① 白底：环带
+        private static Geometry _ringInk;        // ① 墨迹：两圈完整圆环
+        private static Geometry _starBody;       // ② 黑：**严格几何**标准星多边形（尖/谷交替，全直线边）
+        private static Geometry _starHoles;      // ② 白：8 个三角孔之并（底色填，会顺带把圆环切开）
+        private static Geometry[] _starHoleShapes; // ② 每格那个三角孔（高亮时用它改画成暗金）
+        private static Geometry _skullEdge;      // ③ 剪影整块（先填黑，做等宽描边的底色）
+        private static Geometry _skullBody;      // ③ 剪影向内缩一圈（填白，露出一圈等宽黑边）
+        private static Geometry _skullInk;       // ③ 墨迹：轮廓 + 五官（EvenOdd）
+        private static Geometry[] _highlight;    // 每格高亮 = 星 ∩ 该格扇区（随后白孔会把它削掉）
+
+        // ---------- 实例状态 ----------
+        private double _scale;
+        private double _deadZoneRadius;
         private Point _center;
-        private DrawingImage _skullImage;
+        private MatrixTransform _toScreen;
+
+        private Brush _inkBrush;
+        private Pen _seamPen;            // 同色细描边：盖住层与层之间的抗锯齿接缝
+        private Brush _bodyBrush;
+        private Brush _highlightBrush;
+        private Brush _highlightShadowBrush;   // 高亮格内那道缝的暗金色（= 高亮色压暗）
+
+        private MenuItemPosition? _highlightedPosition;
 
         protected override void InitializeMenu()
         {
-            _radius = Config.CSHeadshotMenuConfig.Radius;
-            
-            this.Width = _radius * 2.6;
-            this.Height = _radius * 2.6;
-            _center = new Point(_radius * 1.3, _radius * 1.3);
-            
-            // 加载骷髅头资源
-            try
-            {
-                var dict = new ResourceDictionary();
-                dict.Source = new Uri("pack://application:,,,/WinLoop;component/Resources/skull.xaml");
-                _skullImage = dict["SkullIcon"] as DrawingImage;
-            }
-            catch { }
-            
+            var cfg = Config.CSHeadshotMenuConfig;
+            double radius = Scaled(cfg.Radius > 0 ? cfg.Radius : CSHeadshotMenuConfig.BaseRadius);
+            _scale = radius;
+
+            // VisualRadius 是外部定位与命中的唯一依据，必须真实反映绘制范围
+            double half = _scale * CSHeadshotPathData.MaxRadius * EXTENT_MARGIN;
+            this.Width = half * 2;
+            this.Height = half * 2;
+            this.VisualRadius = half;
+            _center = new Point(half, half);
+
+            // 中心死区 = 底层同心圆内圈的外缘（归一化 RingInnerHigh），换算到本菜单的像素尺度。
+            // 注意用 _scale 而不是 VisualRadius —— 同心圆是用 _scale 的矩阵画出来的，
+            // VisualRadius 另乘了 MaxRadius × EXTENT_MARGIN（≈1.0346），两者不同源。
+            _deadZoneRadius = _scale * CSHeadshotLayers.RingInnerHigh;
+
+            var m = new MatrixTransform(_scale, 0, 0, _scale, _center.X, _center.Y);
+            m.Freeze();
+            _toScreen = m;
+
+            _inkBrush = CreateBrush(cfg.LineColor, Colors.Black);
+            _bodyBrush = CreateBrush(cfg.BodyColor, Color.FromRgb(0xFC, 0xFC, 0xFC));
+
+            // 上层白底与下层墨迹交界处会有抗锯齿留下的细白缝，用同色细描边盖掉
+            _seamPen = new Pen(_inkBrush, SEAM_STROKE) { LineJoin = PenLineJoin.Round };
+            _seamPen.Freeze();
+
+            // 高亮 = 纯色填充：不沿轴向做渐变，也不在外面套辉光
+            Color hlColor = ParseColor(cfg.HighlightColor, Color.FromRgb(0xD4, 0xAF, 0x37));
+            var highlight = new SolidColorBrush(hlColor);
+            highlight.Freeze();
+            _highlightBrush = highlight;
+
+            // 高亮格内那道「缝」也一并处理：改画成暗金（阴影跟着臂一起变金），
+            // 否则白色压在金色上就不像倒角、像个洞。系数固定，跟随 HighlightColor。
+            var shadow = new SolidColorBrush(Darken(hlColor, HIGHLIGHT_SHADOW_FACTOR));
+            shadow.Freeze();
+            _highlightShadowBrush = shadow;
+
+            EnsureGeometry();
             InvalidateVisual();
         }
 
         protected override void OnRender(DrawingContext dc)
         {
             base.OnRender(dc);
-            
-            if (Config == null) return;
-            
-            Color lineColor = (Color)ColorConverter.ConvertFromString(Config.CSHeadshotMenuConfig.LineColor);
-            Color highlightColor = (Color)ColorConverter.ConvertFromString(Config.CSHeadshotMenuConfig.HighlightColor);
-            
-            // 创建金属渐变效果
-            Color brightColor = Color.FromArgb(255, 
-                (byte)Math.Min(255, lineColor.R + 80), 
-                (byte)Math.Min(255, lineColor.G + 80), 
-                (byte)Math.Min(255, lineColor.B + 80));
-            Color darkColor = Color.FromArgb(255,
-                (byte)(lineColor.R * 0.5),
-                (byte)(lineColor.G * 0.5),
-                (byte)(lineColor.B * 0.5));
-            
-            Brush lineBrush = new SolidColorBrush(lineColor);
-            Brush highlightBrush = new SolidColorBrush(Color.FromArgb(200, highlightColor.R, highlightColor.G, highlightColor.B));
-            
-            // 金属渐变画刷
-            LinearGradientBrush metalBrush = new LinearGradientBrush();
-            metalBrush.StartPoint = new Point(0, 0);
-            metalBrush.EndPoint = new Point(1, 1);
-            metalBrush.GradientStops.Add(new GradientStop(brightColor, 0.0));
-            metalBrush.GradientStops.Add(new GradientStop(lineColor, 0.5));
-            metalBrush.GradientStops.Add(new GradientStop(darkColor, 1.0));
-            metalBrush.Freeze();
-            
-            Pen starPen = new Pen(lineBrush, 2.0);
-            starPen.Freeze();
-            
-            Pen outlinePen = new Pen(new SolidColorBrush(Color.FromArgb(180, 0, 0, 0)), 3.5);
-            outlinePen.Freeze();
-            
-            // 1. 绘制外发光效果（阴影）
-            DrawGlowEffect(dc, lineColor);
-            
-            // 2. 绘制高亮区域
+
+            if (_toScreen == null || _starBody == null) return;
+
+            dc.PushTransform(_toScreen);
+
+            // 底衬：已置空（见 EnsureGeometry 里的说明），这段保留是为了配置项还能开关
+            if (_bodyGeometry != null && _bodyGeometry != Geometry.Empty
+                && _bodyBrush != null && _bodyBrush.Opacity > 0)
+            {
+                dc.DrawGeometry(_bodyBrush, null, _bodyGeometry);
+            }
+
+            // ① 同心圆：白底 -> 两圈完整圆环
+            dc.DrawGeometry(_bodyBrush, null, _ringBody);
+            dc.DrawGeometry(_inkBrush, _seamPen, _ringInk);
+
+            // ② 八角星（严格几何）：标准星多边形(黑) -> [该格高亮] -> 8 个三角孔
+            //    孔用底色填，所以会连圆环一起切开（与参考图一致）
+            dc.DrawGeometry(_inkBrush, null, _starBody);
+
             if (_highlightedPosition.HasValue)
             {
-                DrawHighlightSpike(dc, _highlightedPosition.Value, highlightBrush, lineBrush);
-            }
-            
-            // 3. 绘制外围八角星尖角（带金属效果）
-            DrawEightSpikes(dc, starPen, outlinePen, metalBrush, lineColor);
-            
-            // 4. 绘制中心骷髅头
-            DrawSkullCenter(dc, lineBrush, metalBrush);
-        }
-
-        /// <summary>
-        /// 绘制外发光效果
-        /// </summary>
-        private void DrawGlowEffect(DrawingContext dc, Color baseColor)
-        {
-            // 绘制多层光晕
-            Color glowColor = Color.FromArgb(40, baseColor.R, baseColor.G, baseColor.B);
-            for (int i = 3; i >= 1; i--)
-            {
-                Pen glowPen = new Pen(new SolidColorBrush(glowColor), i * 4);
-                glowPen.Freeze();
-                dc.DrawEllipse(null, glowPen, _center, _radius * 0.52, _radius * 0.52);
-            }
-        }
-
-        /// <summary>
-        /// 绘制八个尖角（从圆环边缘向外延伸）- CF风格锐利尖角
-        /// </summary>
-        private void DrawEightSpikes(DrawingContext dc, Pen pen, Pen outlinePen, Brush metalBrush, Color lineColor)
-        {
-            double innerR = _radius * 0.50;   // 圆环内径
-            double outerR = _radius * 1.18;   // 尖角顶点（更尖锐）
-            double spikeWidth = Math.PI / 14; // 尖角底部宽度（更窄更锐利）
-            double midR = _radius * 0.75;     // 尖角中间凹陷点
-            
-            // 绘制内圆环（金属质感）
-            Pen ringOutlinePen = new Pen(new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)), 5);
-            ringOutlinePen.Freeze();
-            dc.DrawEllipse(null, ringOutlinePen, _center, innerR, innerR);
-            
-            Pen ringPen = new Pen(metalBrush, 3);
-            ringPen.Freeze();
-            dc.DrawEllipse(null, ringPen, _center, innerR, innerR);
-            
-            // 绘制8个锐利尖角
-            for (int i = 0; i < 8; i++)
-            {
-                double angle = -Math.PI / 2 + i * ANGLE_STEP; // 从12点钟开始
-                
-                // 创建更锐利的尖角形状
-                Point tip = GetPoint(outerR, angle);
-                Point baseLeft = GetPoint(innerR, angle - spikeWidth);
-                Point baseRight = GetPoint(innerR, angle + spikeWidth);
-                
-                // 中间凹陷点（让尖角看起来更像CF风格）
-                Point midLeft = GetPoint(midR, angle - spikeWidth * 0.4);
-                Point midRight = GetPoint(midR, angle + spikeWidth * 0.4);
-                
-                // 创建尖角渐变（从底部到顶点的渐变）
-                Point tipScreen = tip;
-                Point baseCenter = new Point((baseLeft.X + baseRight.X) / 2, (baseLeft.Y + baseRight.Y) / 2);
-                
-                LinearGradientBrush spikeBrush = new LinearGradientBrush();
-                spikeBrush.StartPoint = new Point(0.5, 1);
-                spikeBrush.EndPoint = new Point(0.5, 0);
-                spikeBrush.GradientStops.Add(new GradientStop(Color.FromArgb(200, lineColor.R, lineColor.G, lineColor.B), 0.0));
-                spikeBrush.GradientStops.Add(new GradientStop(Color.FromArgb(255, 
-                    (byte)Math.Min(255, lineColor.R + 60),
-                    (byte)Math.Min(255, lineColor.G + 60),
-                    (byte)Math.Min(255, lineColor.B + 60)), 0.7));
-                spikeBrush.GradientStops.Add(new GradientStop(Colors.White, 1.0));
-                spikeBrush.Freeze();
-                
-                // 绘制锐利的菱形尖角
-                StreamGeometry geom = new StreamGeometry();
-                using (var ctx = geom.Open())
+                int index = (int)_highlightedPosition.Value;
+                if (index >= 0 && index < ITEM_COUNT && _highlightBrush != null)
                 {
-                    ctx.BeginFigure(baseLeft, true, true);
-                    ctx.LineTo(midLeft, true, false);
-                    ctx.LineTo(tip, true, false);
-                    ctx.LineTo(midRight, true, false);
-                    ctx.LineTo(baseRight, true, false);
-                }
-                geom.Freeze();
-                
-                // 先绘制描边（阴影效果）
-                dc.DrawGeometry(null, outlinePen, geom);
-                // 再绘制填充和边框
-                dc.DrawGeometry(spikeBrush, pen, geom);
-            }
-            
-            // 绘制小型装饰尖角（在主尖角之间）
-            DrawDecorativeSpikes(dc, innerR, lineColor);
-        }
-        
-        /// <summary>
-        /// 绘制装饰性小尖角
-        /// </summary>
-        private void DrawDecorativeSpikes(DrawingContext dc, double innerR, Color lineColor)
-        {
-            double smallOuterR = _radius * 0.68;  // 小尖角顶点
-            double smallWidth = Math.PI / 28;     // 小尖角宽度
-            
-            Brush smallBrush = new SolidColorBrush(Color.FromArgb(180, lineColor.R, lineColor.G, lineColor.B));
-            Pen smallPen = new Pen(new SolidColorBrush(lineColor), 1);
-            smallPen.Freeze();
-            
-            // 在主尖角之间绘制小尖角
-            for (int i = 0; i < 8; i++)
-            {
-                double angle = -Math.PI / 2 + i * ANGLE_STEP + ANGLE_STEP / 2;
-                
-                Point tip = GetPoint(smallOuterR, angle);
-                Point baseLeft = GetPoint(innerR, angle - smallWidth);
-                Point baseRight = GetPoint(innerR, angle + smallWidth);
-                
-                StreamGeometry geom = new StreamGeometry();
-                using (var ctx = geom.Open())
-                {
-                    ctx.BeginFigure(tip, true, true);
-                    ctx.LineTo(baseLeft, true, false);
-                    ctx.LineTo(baseRight, true, false);
-                }
-                geom.Freeze();
-                
-                dc.DrawGeometry(smallBrush, smallPen, geom);
-            }
-        }
-
-        /// <summary>
-        /// 绘制中心骷髅头
-        /// </summary>
-        private void DrawSkullCenter(DrawingContext dc, Brush defaultBrush, Brush metalBrush)
-        {
-            double skullSize = _radius * 0.90;
-            
-            // 绘制骷髅头底部阴影
-            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(60, 0, 0, 0)), null,
-                new Point(_center.X + 2, _center.Y + 2), skullSize * 0.42, skullSize * 0.42);
-            
-            if (_skullImage != null)
-            {
-                // 使用矢量骷髅头图片
-                Rect skullRect = new Rect(
-                    _center.X - skullSize / 2,
-                    _center.Y - skullSize / 2,
-                    skullSize,
-                    skullSize
-                );
-                dc.DrawImage(_skullImage, skullRect);
-            }
-            else
-            {
-                // 备用：代码绘制骷髅头
-                DrawFallbackSkull(dc, defaultBrush, skullSize);
-            }
-        }
-
-        /// <summary>
-        /// 备用骷髅头绘制 - CF风格
-        /// </summary>
-        private void DrawFallbackSkull(DrawingContext dc, Brush brush, double size)
-        {
-            double r = size * 0.45;
-            
-            // 阴影
-            dc.DrawEllipse(new SolidColorBrush(Color.FromArgb(80, 0, 0, 0)), null,
-                new Point(_center.X + 2, _center.Y + 2), r, r * 0.95);
-            
-            // 头部 - 使用渐变
-            RadialGradientBrush skullBrush = new RadialGradientBrush();
-            skullBrush.GradientOrigin = new Point(0.3, 0.3);
-            skullBrush.Center = new Point(0.5, 0.5);
-            skullBrush.RadiusX = 0.5;
-            skullBrush.RadiusY = 0.5;
-            skullBrush.GradientStops.Add(new GradientStop(Colors.White, 0.0));
-            skullBrush.GradientStops.Add(new GradientStop(Color.FromRgb(230, 230, 230), 0.7));
-            skullBrush.GradientStops.Add(new GradientStop(Color.FromRgb(180, 180, 180), 1.0));
-            skullBrush.Freeze();
-            
-            dc.DrawEllipse(skullBrush, new Pen(Brushes.Gray, 1), _center, r, r * 0.95);
-            
-            // 下颌
-            StreamGeometry jawGeom = new StreamGeometry();
-            using (var ctx = jawGeom.Open())
-            {
-                ctx.BeginFigure(new Point(_center.X - r * 0.65, _center.Y + r * 0.3), true, true);
-                ctx.LineTo(new Point(_center.X + r * 0.65, _center.Y + r * 0.3), true, false);
-                ctx.LineTo(new Point(_center.X + r * 0.5, _center.Y + r * 0.9), true, false);
-                ctx.LineTo(new Point(_center.X - r * 0.5, _center.Y + r * 0.9), true, false);
-            }
-            jawGeom.Freeze();
-            dc.DrawGeometry(skullBrush, new Pen(Brushes.Gray, 1), jawGeom);
-            
-            // 眼睛（深黑色带渐变）
-            RadialGradientBrush eyeBrush = new RadialGradientBrush();
-            eyeBrush.GradientOrigin = new Point(0.5, 0.5);
-            eyeBrush.GradientStops.Add(new GradientStop(Colors.Black, 0.0));
-            eyeBrush.GradientStops.Add(new GradientStop(Color.FromRgb(30, 30, 30), 0.8));
-            eyeBrush.GradientStops.Add(new GradientStop(Color.FromRgb(50, 50, 50), 1.0));
-            eyeBrush.Freeze();
-            
-            double eyeR = r * 0.28;
-            double eyeX = r * 0.38;
-            double eyeY = r * 0.1;
-            
-            dc.DrawEllipse(eyeBrush, null, new Point(_center.X - eyeX, _center.Y - eyeY), eyeR, eyeR * 1.15);
-            dc.DrawEllipse(eyeBrush, null, new Point(_center.X + eyeX, _center.Y - eyeY), eyeR, eyeR * 1.15);
-            
-            // 右眼五角星（CF标志性）
-            DrawStar(dc, Brushes.White, new Point(_center.X + eyeX, _center.Y - eyeY), eyeR * 0.7);
-            
-            // 鼻孔
-            StreamGeometry noseGeom = new StreamGeometry();
-            using (var ctx = noseGeom.Open())
-            {
-                ctx.BeginFigure(new Point(_center.X - r * 0.12, _center.Y + r * 0.2), true, true);
-                ctx.LineTo(new Point(_center.X + r * 0.12, _center.Y + r * 0.2), true, false);
-                ctx.LineTo(new Point(_center.X, _center.Y + r * 0.45), true, false);
-            }
-            noseGeom.Freeze();
-            dc.DrawGeometry(eyeBrush, null, noseGeom);
-            
-            // 牙齿线
-            Pen toothPen = new Pen(Brushes.DarkGray, 1.5);
-            double teethY = _center.Y + r * 0.55;
-            dc.DrawLine(toothPen, new Point(_center.X - r * 0.45, teethY), new Point(_center.X + r * 0.45, teethY));
-            
-            // 牙齿分隔
-            for (int i = -2; i <= 2; i++)
-            {
-                double x = _center.X + i * r * 0.15;
-                dc.DrawLine(toothPen, new Point(x, teethY), new Point(x, _center.Y + r * 0.85));
-            }
-        }
-
-        /// <summary>
-        /// 绘制五角星 - 更精致的CF风格
-        /// </summary>
-        private void DrawStar(DrawingContext dc, Brush fill, Point center, double size)
-        {
-            StreamGeometry geom = new StreamGeometry();
-            using (var ctx = geom.Open())
-            {
-                double inner = size * 0.4;
-                bool first = true;
-                for (int i = 0; i < 5; i++)
-                {
-                    double outerA = -Math.PI / 2 + i * (2 * Math.PI / 5);
-                    double innerA = outerA + Math.PI / 5;
-                    
-                    Point outerP = new Point(center.X + size * Math.Cos(outerA), center.Y + size * Math.Sin(outerA));
-                    Point innerP = new Point(center.X + inner * Math.Cos(innerA), center.Y + inner * Math.Sin(innerA));
-                    
-                    if (first) { ctx.BeginFigure(outerP, true, true); first = false; }
-                    else { ctx.LineTo(outerP, true, false); }
-                    ctx.LineTo(innerP, true, false);
+                    dc.DrawGeometry(_highlightBrush, null, _highlight[index]);
                 }
             }
-            geom.Freeze();
-            
-            // 添加发光效果
-            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(100, 255, 255, 255)), null, geom);
-            dc.DrawGeometry(fill, new Pen(Brushes.White, 0.5), geom);
+
+            dc.DrawGeometry(_bodyBrush, null, _starHoles);
+
+            // 高亮格那道缝改画成暗金：让「立体倒角」跟着臂一起变金
+            if (_highlightedPosition.HasValue)
+            {
+                int hi = (int)_highlightedPosition.Value;
+                if (hi >= 0 && hi < ITEM_COUNT && _highlightShadowBrush != null)
+                {
+                    dc.DrawGeometry(_highlightShadowBrush, null, _starHoleShapes[hi]);
+                }
+            }
+
+            // ③ 骷髅头：整块填黑 -> 内缩一圈的白本体（露出等宽黑边）-> 墨迹
+            //    白本体同时把下层墨迹与高亮一并裁掉
+            dc.DrawGeometry(_inkBrush, null, _skullEdge);
+            dc.DrawGeometry(_bodyBrush, null, _skullBody);
+            dc.DrawGeometry(_inkBrush, _seamPen, _skullInk);
+
+            dc.Pop();
+        }
+
+        // ===================== 几何构建 =====================
+
+        private static void EnsureGeometry()
+        {
+            lock (Gate)
+            {
+                if (_geometryReady) return;
+                _geometryReady = true;
+
+                // ---- ① 同心圆：完整两圈 ----
+                _ringBody = BuildAnnulus(CSHeadshotLayers.RingInnerLow, CSHeadshotLayers.RingOuterHigh);
+                _ringInk = Combine(GeometryCombineMode.Union,
+                    BuildAnnulus(CSHeadshotLayers.RingInnerLow, CSHeadshotLayers.RingInnerHigh),
+                    BuildAnnulus(CSHeadshotLayers.RingOuterLow, CSHeadshotLayers.RingOuterHigh));
+
+                // ---- ② 八角星（严格几何构造） ----
+                // 黑 = 标准星多边形(尖 StarTipRadius / 谷 StarValleyRadius，全直线边)
+                // 白 = 每支尖被斜削掉的一块三角孔
+                //      [ (StarHoleTipRadius, 尖轴) ,
+                //        (StarHoleMidRadius, 尖轴 + StarHoleAngleDeg) , (圆心) ]
+                _starBody = BuildStarPolygon();
+                _starHoleShapes = new Geometry[ITEM_COUNT];
+                var holeGroup = new GeometryGroup { FillRule = FillRule.Nonzero };
+                for (int i = 0; i < ITEM_COUNT; i++)
+                {
+                    _starHoleShapes[i] = BuildStarHole(i);
+                    holeGroup.Children.Add(_starHoleShapes[i]);
+                }
+                holeGroup.Freeze();
+                _starHoles = holeGroup;
+
+                // ---- 底衬：按用户要求去掉 ----
+                // 原来那层浅色打底会在尖角两侧露出一圈白边（深色壁纸上很明显），
+                // 高亮时也没法干净地染金。直接置空，OnRender 里的底衬绘制会自动跳过。
+                _bodyGeometry = Geometry.Empty;
+
+                // ---- ③ 骷髅头：剪影（黑底 + 内缩白本体）+ 墨迹轮廓（EvenOdd） ----
+                // 描摹出来的轮廓厚薄不均（顶部薄、两侧厚），外面兜一圈等宽黑边
+                // （剪影填黑 -> 内缩 SkullStrokeWidth 的白本体）读起来才像参考图那样均匀。
+                Geometry skullRim = BuildGeometry(
+                    CSHeadshotLayers.Parse(CSHeadshotLayers.SkullSilhouetteLoops), FillRule.Nonzero)
+                    ?? Geometry.Empty;
+                double sw = CSHeadshotLayers.SkullStrokeWidth;
+                var widenPen = new Pen(Brushes.Black, sw * 2.0) { LineJoin = PenLineJoin.Round };
+                Geometry rimBand = skullRim.GetWidenedPathGeometry(widenPen);
+                _skullEdge = skullRim;                                       // 先整块填黑
+                _skullBody = Combine(GeometryCombineMode.Exclude, skullRim, rimBand);  // 内缩一圈填白
+                _skullInk = BuildGeometry(
+                    CSHeadshotLayers.Parse(CSHeadshotLayers.SkullInkLoops), FillRule.EvenOdd)
+                    ?? Geometry.Empty;
+
+                // ---- 每格高亮：星 ∩ 该格 45° 扇区（随后白孔会把它削掉） ----
+                _highlight = new Geometry[ITEM_COUNT];
+                for (int i = 0; i < ITEM_COUNT; i++)
+                {
+                    _highlight[i] = Combine(GeometryCombineMode.Intersect,
+                        _starBody, BuildSector(BASE_ANGLE_DEG + i * SECTOR_DEG));
+                }
+            }
         }
 
         /// <summary>
-        /// 绘制高亮尖角 - 增强视觉效果
+        /// ② 八角星的黑体：标准星多边形 —— 8 个尖（半径 StarTipRadius，在 8 个格轴上）
+        /// 与 8 个谷（半径 StarValleyRadius，在格轴 + 22.5° 的角平分线上）交替，**全部是直线边**。
+        /// 这是「严格几何画法」的主体，不含任何描摹数据。
         /// </summary>
-        private void DrawHighlightSpike(DrawingContext dc, MenuItemPosition pos, Brush brush, Brush outline)
+        private static Geometry BuildStarPolygon()
         {
-            int idx = (int)pos;
-            double angle = -Math.PI / 2 + idx * ANGLE_STEP;
-            
-            double innerR = _radius * 0.50;
-            double outerR = _radius * 1.22;  // 高亮时稍微放大
-            double spikeWidth = Math.PI / 14;
-            double midR = _radius * 0.75;
-            
-            Point tip = GetPoint(outerR, angle);
-            Point baseLeft = GetPoint(innerR, angle - spikeWidth);
-            Point baseRight = GetPoint(innerR, angle + spikeWidth);
-            Point midLeft = GetPoint(midR, angle - spikeWidth * 0.4);
-            Point midRight = GetPoint(midR, angle + spikeWidth * 0.4);
-            
-            // 绘制发光效果
-            Color highlightColor = ((SolidColorBrush)brush).Color;
-            for (int i = 3; i >= 1; i--)
+            var figure = new PathFigure { IsClosed = true, IsFilled = true };
+            for (int k = 0; k < ITEM_COUNT; k++)
             {
-                StreamGeometry glowGeom = new StreamGeometry();
-                using (var ctx = glowGeom.Open())
+                double axis = BASE_ANGLE_DEG + k * SECTOR_DEG;
+                Point tip = Polar(CSHeadshotLayers.StarTipRadius, axis);
+                Point valley = Polar(CSHeadshotLayers.StarValleyRadius, axis + HALF_SECTOR_DEG);
+
+                if (k == 0) figure.StartPoint = tip;
+                else figure.Segments.Add(new LineSegment(tip, true));
+                figure.Segments.Add(new LineSegment(valley, true));
+            }
+
+            var path = new PathGeometry();
+            path.Figures.Add(figure);
+            path.Freeze();
+            return path;
+        }
+
+        /// <summary>
+        /// ② 每支尖被斜削掉的那块**三角孔**：三个顶点依次为
+        ///   (StarHoleTipRadius, 尖轴) -> (StarHoleMidRadius, 尖轴 + StarHoleAngleDeg) -> (圆心)。
+        /// 画完黑星再用底色填这 8 块，每支尖都是「一边满、一边被斜切」，形成风车感；
+        /// 因为是用底色填，它也会顺带把圆环切开（与参考图一致）。
+        /// </summary>
+        private static Geometry BuildStarHole(int index)
+        {
+            double axis = BASE_ANGLE_DEG + index * SECTOR_DEG;
+            var figure = new PathFigure
+            {
+                StartPoint = new Point(0, 0),
+                IsClosed = true,
+                IsFilled = true
+            };
+            figure.Segments.Add(new LineSegment(
+                Polar(CSHeadshotLayers.StarHoleTipRadius, axis), true));
+            figure.Segments.Add(new LineSegment(
+                Polar(CSHeadshotLayers.StarHoleMidRadius, axis + CSHeadshotLayers.StarHoleAngleDeg), true));
+
+            var path = new PathGeometry();
+            path.Figures.Add(figure);
+            path.Freeze();
+            return path;
+        }
+
+        /// <summary>某格的 45° 扇区（一个足够大的三角形，用来裁出该格的高亮）。</summary>
+        private static Geometry BuildSector(double axisDeg)
+        {
+            const double reach = 4.0;   // 足够远，把整支尖罩住
+            var figure = new PathFigure
+            {
+                StartPoint = new Point(0, 0),
+                IsClosed = true,
+                IsFilled = true
+            };
+            figure.Segments.Add(new LineSegment(Polar(reach, axisDeg - HALF_SECTOR_DEG), true));
+            figure.Segments.Add(new LineSegment(Polar(reach, axisDeg + HALF_SECTOR_DEG), true));
+
+            var path = new PathGeometry();
+            path.Figures.Add(figure);
+            path.Freeze();
+            return path;
+        }
+
+        /// <summary>极坐标 -> 菜单坐标（deg 以 +x 为 0°，y 轴向下为正）。</summary>
+        private static Point Polar(double r, double deg)
+        {
+            double a = deg * Math.PI / 180.0;
+            return new Point(r * Math.Cos(a), r * Math.Sin(a));
+        }
+
+        /// <summary>做一次几何布尔运算并冻结。</summary>
+        /// <summary>把颜色按 <paramref name="f"/> 线性压暗（0 = 全黑，1 = 原色）。</summary>
+        private static Color Darken(Color c, double f)
+        {
+            if (f < 0) f = 0; else if (f > 1) f = 1;
+            return Color.FromRgb((byte)(c.R * f), (byte)(c.G * f), (byte)(c.B * f));
+        }
+
+        /// <summary>做一次几何布尔运算并冻结。</summary>
+        private static Geometry Combine(GeometryCombineMode mode, Geometry a, Geometry b)
+        {
+            if (a == null || b == null) return Geometry.Empty;
+            var g = new CombinedGeometry(mode, a, b);
+            g.Freeze();
+            return g;
+        }
+
+        /// <summary>圆环带：大圆挖掉小圆。</summary>
+        private static Geometry BuildAnnulus(double rIn, double rOut)
+        {
+            var outer = new EllipseGeometry(new Point(0, 0), rOut, rOut);
+            var inner = new EllipseGeometry(new Point(0, 0), rIn, rIn);
+            var g = new CombinedGeometry(GeometryCombineMode.Exclude, outer, inner);
+            g.Freeze();
+            return g;
+        }
+
+        /// <summary>把闭合折线数组拼成一个可填充的 Geometry。</summary>
+        private static Geometry BuildGeometry(List<Point[]> loops, FillRule rule)
+        {
+            if (loops == null || loops.Count == 0) return null;
+
+            var group = new GeometryGroup { FillRule = rule };
+            foreach (Point[] pts in loops)
+            {
+                if (pts == null || pts.Length < 3) continue;
+
+                var figure = new PathFigure { StartPoint = pts[0], IsClosed = true, IsFilled = true };
+                for (int i = 1; i < pts.Length; i++)
                 {
-                    double scale = 1 + i * 0.03;
-                    Point gTip = GetPoint(outerR * scale, angle);
-                    Point gBaseLeft = GetPoint(innerR, angle - spikeWidth * scale);
-                    Point gBaseRight = GetPoint(innerR, angle + spikeWidth * scale);
-                    
-                    ctx.BeginFigure(gTip, true, true);
-                    ctx.LineTo(gBaseLeft, true, false);
-                    ctx.LineTo(gBaseRight, true, false);
+                    figure.Segments.Add(new LineSegment(pts[i], true));
                 }
-                glowGeom.Freeze();
-                
-                Color glowColor = Color.FromArgb((byte)(40 + i * 20), highlightColor.R, highlightColor.G, highlightColor.B);
-                dc.DrawGeometry(new SolidColorBrush(glowColor), null, glowGeom);
+
+                var path = new PathGeometry();
+                path.Figures.Add(figure);
+                group.Children.Add(path);
             }
-            
-            // 绘制主高亮尖角
-            StreamGeometry geom = new StreamGeometry();
-            using (var ctx = geom.Open())
+
+            if (group.Children.Count == 0) return null;
+            group.Freeze();
+            return group;
+        }
+
+        // ===================== 颜色 / 画刷 =====================
+
+        private static Brush CreateBrush(string text, Color fallback)
+        {
+            var brush = new SolidColorBrush(ParseColor(text, fallback));
+            brush.Freeze();
+            return brush;
+        }
+
+        /// <summary>解析 #RRGGBB / #AARRGGBB 之类的颜色文本，失败时返回 fallback。</summary>
+        private static Color ParseColor(string text, Color fallback)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return fallback;
+            try
             {
-                ctx.BeginFigure(baseLeft, true, true);
-                ctx.LineTo(midLeft, true, false);
-                ctx.LineTo(tip, true, false);
-                ctx.LineTo(midRight, true, false);
-                ctx.LineTo(baseRight, true, false);
+                var parsed = ColorConverter.ConvertFromString(text.Trim());
+                if (parsed is Color color) return color;
             }
-            geom.Freeze();
-            
-            // 高亮渐变
-            LinearGradientBrush highlightGradient = new LinearGradientBrush();
-            highlightGradient.StartPoint = new Point(0.5, 1);
-            highlightGradient.EndPoint = new Point(0.5, 0);
-            highlightGradient.GradientStops.Add(new GradientStop(highlightColor, 0.0));
-            highlightGradient.GradientStops.Add(new GradientStop(Color.FromArgb(255,
-                (byte)Math.Min(255, highlightColor.R + 50),
-                (byte)Math.Min(255, highlightColor.G + 50),
-                (byte)Math.Min(255, highlightColor.B + 50)), 0.6));
-            highlightGradient.GradientStops.Add(new GradientStop(Colors.White, 1.0));
-            highlightGradient.Freeze();
-            
-            dc.DrawGeometry(highlightGradient, new Pen(outline, 2), geom);
+            catch
+            {
+                // 配置里写了非法颜色时退回默认值，不影响菜单可用性
+            }
+            return fallback;
         }
 
-        private Point GetPoint(double r, double angle)
-        {
-            return new Point(_center.X + r * Math.Cos(angle), _center.Y + r * Math.Sin(angle));
-        }
+        // ===================== 交互 =====================
 
-        public override MenuItemPosition? GetSelectedItem(Point mousePosition)
-        {
-            // 菜单中心点是 (_radius * 1.3, _radius * 1.3)
-            double centerX = _radius * 1.3;
-            double centerY = _radius * 1.3;
-            
-            double dx = mousePosition.X - centerX;
-            double dy = mousePosition.Y - centerY;
-            double dist = Math.Sqrt(dx * dx + dy * dy);
-            
-            // 在骷髅头内不选中，在外圈外也不选中
-            if (dist < _radius * 0.45 || dist > _radius * 1.25)
-                return null;
-            
-            // 计算角度（从12点钟方向开始，顺时针）
-            double angle = Math.Atan2(dy, dx) * 180 / Math.PI + 90;
-            if (angle < 0) angle += 360;
-            
-            int sector = (int)((angle + 22.5) / 45.0) % 8;
-            return (MenuItemPosition)sector;
-        }
+        // 命中判定不在这里实现：GetSelectedItem 由基类 RadialMenu 统一提供，
+        // 四种样式的「选哪个扇区」因此天然完全一致，只有下面的「高亮画成什么形状」各不相同。
+
+        /// <summary>
+        /// 中心死区 = 底层同心圆的**内圆**（内圈环的外缘）之内，
+        /// 也就是指针退回到那个"里圈"以里就取消选择。
+        /// 取的是 <c>RingInnerHigh</c>（内圈的外边界），不是 RingInnerLow ——
+        /// "内圆"指的是能被看见的那个圆的轮廓。
+        /// </summary>
+        public override double CenterDeadZoneRadius => _deadZoneRadius;
 
         public override void HighlightItem(MenuItemPosition itemPosition)
         {
@@ -458,28 +420,6 @@ namespace WinLoop.Menus
         {
             _highlightedPosition = null;
             InvalidateVisual();
-        }
-    }
-    #endif
-
-    // Stubbed to disable non-ring style while keeping compile compatibility
-    public class CSHeadshotMenu : RadialMenu
-    {
-        protected override void InitializeMenu()
-        {
-            // Headshot menu disabled
-        }
-
-        public override MenuItemPosition? GetSelectedItem(Point mousePosition) => null;
-
-        public override void HighlightItem(MenuItemPosition itemPosition)
-        {
-            // No-op
-        }
-
-        public override void ClearHighlight()
-        {
-            // No-op
         }
     }
 }

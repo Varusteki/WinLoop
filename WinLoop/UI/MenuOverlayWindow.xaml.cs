@@ -90,14 +90,30 @@ namespace WinLoop.UI
             _logicalCenter = new Point(logicalCenter.X - _logicalOrigin.X, logicalCenter.Y - _logicalOrigin.Y);
             App.Log($"Center: physical=({_centerPosition.X},{_centerPosition.Y}) logical=({logicalCenter.X},{logicalCenter.Y})");
 
+            // 尺寸自适应：配置里存的是「100% 缩放基准的逻辑像素」，
+            // 这里按本窗口所在显示器的 DPI 缩放换算成实际逻辑像素，否则
+            // 同一份配置在 200% 缩放的 4K 屏上只有 1080p 的四分之一大。
+            // 必须在 CreateMenu/Initialize 之前设好 —— 菜单在 Initialize 里读这个系数。
+            _config.SizingScale = SizingScale.FromVisual(this);
+            App.Log($"SizingScale (DPI/96, this monitor) = {_config.SizingScale}");
+
             // 创建菜单
             var factory = new RadialMenuFactory();
             _currentMenu = factory.CreateMenu(_config.MenuStyle, _config);
             App.Log($"Menu created, style: {_config.MenuStyle}");
 
-            // 获取菜单半径以计算位置
-            double menuRadius = GetMenuRadius();
-            App.Log($"Menu radius: {menuRadius}");
+            // 先初始化菜单。Initialize 会把该样式真实的半尺寸写入 VisualRadius，
+            // 外部必须用这个值定位：各样式绘制留白不同，不能再用配置半径自行推算。
+            _currentMenu.Initialize(_config, new Point(0, 0));
+            double menuRadius = _currentMenu.VisualRadius;
+            App.Log($"Menu initialized: VisualRadius={menuRadius}, size={_currentMenu.Width}x{_currentMenu.Height}");
+
+            if (menuRadius <= 0)
+            {
+                // 兜底：样式未正确上报半尺寸时按窗口尺寸回退，避免菜单跑到屏幕外
+                menuRadius = Math.Max(_currentMenu.Width, _currentMenu.Height) / 2;
+                App.Log($"VisualRadius invalid, falling back to {menuRadius}");
+            }
 
             // 菜单应该以鼠标位置为中心，所以需要偏移半径
             Point menuTopLeft = new Point(
@@ -110,14 +126,16 @@ namespace WinLoop.UI
             _currentMenu.RenderTransform = _menuScale;
             _currentMenu.Opacity = 0;
 
-            _currentMenu.Initialize(_config, new Point(menuRadius, menuRadius)); // 菜单内部的中心点
-            App.Log($"Menu initialized, size: {_currentMenu.Width}x{_currentMenu.Height}");
-
             // 设置好菜单位置并添加到 Canvas
             System.Windows.Controls.Canvas.SetLeft(_currentMenu, menuTopLeft.X);
             System.Windows.Controls.Canvas.SetTop(_currentMenu, menuTopLeft.Y);
             OverlayCanvas.Children.Add(_currentMenu);
             App.Log($"Menu positioned at Canvas ({menuTopLeft.X}, {menuTopLeft.Y})");
+
+            // 菜单控件自己不参与命中测试：高亮完全由覆盖窗口按屏幕坐标统一更新，
+            // 菜单只负责把高亮画成对应形状。若让它可命中，指针压在菜单图形上时
+            // 事件会被它吃掉，窗口内 MouseMove 这条兜底路径就会在菜单范围内失效。
+            _currentMenu.IsHitTestVisible = false;
 
             // 确保Canvas可以接收鼠标事件
             OverlayCanvas.IsHitTestVisible = true;
@@ -169,33 +187,14 @@ namespace WinLoop.UI
             }
         }
 
-        private double GetMenuRadius()
-        {
-            switch (_config.MenuStyle)
-            {
-                case MenuStyle.BasicRadial:
-                    return _config.BasicRadialMenuConfig.OuterRadius;
-                case MenuStyle.CSHeadshotOctagon:
-                    return _config.CSHeadshotMenuConfig.Radius;
-                case MenuStyle.SpiderWeb:
-                    return _config.SpiderWebMenuConfig.OuterRadius;
-                case MenuStyle.Bagua:
-                    return _config.BaguaMenuConfig.OuterRadius * 1.2; // 八卦菜单绘制时外扩了1.2倍
-                default:
-                    return _config.BasicRadialMenuConfig.OuterRadius;
-            }
-        }
-
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
-            if (_currentMenu == null)
-            {
-                App.Log("OnMouseMove: _currentMenu is null");
-                return;
-            }
+            if (_currentMenu == null) return;
 
-            var mousePos = e.GetPosition(OverlayCanvas);
-            UpdateHighlight(mousePos);
+            // e.GetPosition(OverlayCanvas) 给的是 **Canvas 坐标**（原点 = 虚拟屏幕左上角），
+            // 与 UpdateHighlightFromScreen 那条钩子路径最终得到的坐标是**同一个坐标系**，
+            // 所以这里可以安全地走同一个入口。
+            UpdateHighlight(e.GetPosition(OverlayCanvas));
         }
 
         /// <summary>
@@ -204,29 +203,93 @@ namespace WinLoop.UI
         public void UpdateHighlightFromScreen(Point screenPos)
         {
             if (_currentMenu == null || !this.IsVisible) return;
-
-            // 换算到逻辑坐标：菜单定位与命中判定都在逻辑坐标系内进行
-            Point logical = PhysicalToLogical(screenPos);
-            double menuRadius = GetMenuRadius();
-
-            Point menuPos = new Point(
-                logical.X - _logicalCenter.X + menuRadius,
-                logical.Y - _logicalCenter.Y + menuRadius
-            );
-
-            ApplyHighlight(menuPos);
+            UpdateHighlight(ScreenToCanvas(screenPos));
         }
 
-        private void UpdateHighlight(Point menuPos)
+        /// <summary>
+        /// 屏幕物理像素 → Canvas 逻辑坐标。
+        ///
+        /// 钩子（WH_MOUSE_LL）报的是**物理像素**，原点在主显示器左上角；
+        /// 而 Canvas 的原点在**虚拟屏幕左上角**（窗口 Left/Top = VirtualScreenLeft/Top），
+        /// 两者差一个虚拟屏幕原点，必须减掉。
+        /// 单屏时虚拟屏幕原点就是 (0,0)，少减这一下看不出问题；
+        /// 多屏且副屏在主屏左侧或上方时，判定会整体偏掉。
+        /// </summary>
+        private Point ScreenToCanvas(Point physical)
+        {
+            Point logical = PhysicalToLogical(physical);
+            return new Point(logical.X - _logicalOrigin.X, logical.Y - _logicalOrigin.Y);
+        }
+
+        /// <summary>
+        /// 高亮更新的**唯一入口**：不管坐标从哪条路径来，都先在这里换算成菜单自身坐标再判定。
+        /// 两条路径（全局钩子 / 窗口内 MouseMove）因此不可能再各算一套扇区。
+        /// </summary>
+        private void UpdateHighlight(Point canvasPos)
         {
             if (_currentMenu == null) return;
-            ApplyHighlight(menuPos);
+
+            // 用菜单自报的真实半尺寸；菜单在 Canvas 中的左上角与它基于同一基准。
+            double menuRadius = _currentMenu.VisualRadius;
+            if (menuRadius <= 0) return;
+
+            ApplyHighlight(CanvasToMenu(canvasPos, MenuCenterInCanvas(menuRadius), menuRadius));
+        }
+
+        /// <summary>
+        /// 菜单中心在 Canvas 中的位置。
+        ///
+        /// **不要改回读 `_logicalCenter` 字段**：那是 ShowAt 里用「屏幕坐标经 DPI 换算
+        /// 再减虚拟屏幕原点」推导出来的，中间任何一步在非 100% 缩放或多屏下出偏差，
+        /// 判定就会整体偏掉（表现为恒选某一个扇区，与指针方向无关）。
+        /// 这里直接读菜单控件在 Canvas 中的**实际布局位置**，再由它加半径得到中心 ——
+        /// 与菜单真正画在哪里永远一致，不受任何换算影响。
+        /// </summary>
+        private Point MenuCenterInCanvas(double menuRadius)
+        {
+            double left = System.Windows.Controls.Canvas.GetLeft(_currentMenu);
+            double top = System.Windows.Controls.Canvas.GetTop(_currentMenu);
+
+            if (double.IsNaN(left) || double.IsNaN(top))
+            {
+                // 布局尚未应用（极早期调用）：退回 ShowAt 里算好的中心值
+                return _logicalCenter;
+            }
+
+            return new Point(left + menuRadius, top + menuRadius);
+        }
+
+        /// <summary>
+        /// Canvas 逻辑坐标 → 菜单自身坐标（判定唯一接受的坐标系）。
+        /// 做成静态纯函数，便于 <c>Tools/MenuProbe</c> 回归这颗坐标换算。
+        /// </summary>
+        /// <param name="canvasPos">指针在 Canvas 上的位置。</param>
+        /// <param name="menuCenterInCanvas">菜单中心在 Canvas 上的位置（<c>MenuCenterInCanvas</c> 的结果）。</param>
+        /// <param name="menuRadius">菜单半尺寸（<c>VisualRadius</c>）。</param>
+        public static Point CanvasToMenu(Point canvasPos, Point menuCenterInCanvas, double menuRadius)
+        {
+            return new Point(
+                canvasPos.X - menuCenterInCanvas.X + menuRadius,
+                canvasPos.Y - menuCenterInCanvas.Y + menuRadius
+            );
         }
 
         private void ApplyHighlight(Point menuPos)
         {
-            // 直接使用菜单自己的 GetSelectedItem 方法（每个菜单有自己的角度计算逻辑）
+            // 判定统一在 RadialMenu 里（四种样式同一份），这里只管把结果落到画面上
             var position = _currentMenu.GetSelectedItem(menuPos);
+
+            // 诊断：把「喂进判定的坐标 + 菜单中心 + 算出的扇区」成对记下来，
+            // 便于定位「启动初期某方向不触发」这类时序问题（正常时应静默）。
+            if (App.DiagnosticHighlightLogging)
+            {
+                Point center = MenuCenterInCanvas(_currentMenu.VisualRadius);
+                App.Log($"[DIAG] menuPos=({menuPos.X:0.#},{menuPos.Y:0.#}) " +
+                        $"center=({center.X:0.#},{center.Y:0.#}) " +
+                        $"radius={_currentMenu.VisualRadius:0.#} " +
+                        $"-> {(position.HasValue ? position.Value.ToString() : "null")} " +
+                        $"(prev={(_highlightedPosition.HasValue ? _highlightedPosition.Value.ToString() : "null")})");
+            }
 
             if (position != _highlightedPosition)
             {
