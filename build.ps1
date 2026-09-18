@@ -1,9 +1,12 @@
-# WinLoop build script
+﻿# WinLoop build script
 # Output: ./build/<version>
-# -NoOpen: do not open Explorer
+# -Version: override version prefix (default V0.2)
+#
+# 只负责构建 + 发布，不打开资源管理器。
+# 「构建完打开产物目录并选中 exe」由上层作业脚本负责：job-build.ps1
 
 param(
-    [switch]$NoOpen
+    [string]$Version = "V0.2"
 )
 
 $ErrorActionPreference = 'Stop'
@@ -25,40 +28,11 @@ Set-Location -LiteralPath $scriptDir
 # Base directory for all relative paths
 $baseDir = $scriptDir
 
-function Ensure-ForegroundWindow([IntPtr]$hWnd)
-{
-    try
-    {
-        if ($hWnd -eq [IntPtr]::Zero) { return }
-
-        if (-not ([System.Management.Automation.PSTypeName]'WinLoopNative.User32').Type)
-        {
-            Add-Type -Namespace WinLoopNative -Name User32 -MemberDefinition @"
-using System;
-using System.Runtime.InteropServices;
-
-public static class User32
-{
-    [DllImport("user32.dll")]
-    public static extern bool SetForegroundWindow(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-}
-"@
-        }
-
-        [WinLoopNative.User32]::ShowWindowAsync($hWnd, 9) | Out-Null
-        [WinLoopNative.User32]::SetForegroundWindow($hWnd) | Out-Null
-    }
-    catch { }
-}
-
 if (-not $baseDir) { throw 'baseDir is empty; cannot locate repo root' }
 $baseDir = (Resolve-Path -LiteralPath $baseDir).Path
 
 $currentDate = Get-Date -Format 'yyyyMMddHHmm'
-$version = "V0.1-$currentDate"
+$version = "$Version-$currentDate"
 Write-Host "Building WinLoop $version..."
 
 # Ensure build directory exists (keep history)
@@ -105,7 +79,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host 'Publishing project...'
-& dotnet publish -c Release -o (Join-Path -Path $scriptDir -ChildPath "build/$version")
+& dotnet publish -c Release -r win-x64 --self-contained false -o (Join-Path -Path $scriptDir -ChildPath "build/$version")
 if ($LASTEXITCODE -ne 0) {
     Write-Host 'Publish failed!' -ForegroundColor Red
     Pop-Location
@@ -115,39 +89,3 @@ Pop-Location
 
 Write-Host 'Build succeeded!' -ForegroundColor Green
 Write-Host "Output: ./build/$version"
-
-# Optionally open output directory
-$buildOutputPath = Join-Path $scriptDir "build/$version"
-if (-not $NoOpen) {
-    try {
-        if (Test-Path -LiteralPath $buildOutputPath) {
-            $target = (Resolve-Path -LiteralPath $buildOutputPath).Path.TrimEnd('\\')
-            $shell = New-Object -ComObject Shell.Application
-            $existing = $null
-            foreach ($w in @($shell.Windows())) {
-                try {
-                    if (-not $w) { continue }
-                    $fullName = [string]$w.FullName
-                    if (-not $fullName) { continue }
-                    if ([System.IO.Path]::GetFileName($fullName) -ne 'explorer.exe') { continue }
-                    $url = [string]$w.LocationURL
-                    if (-not $url) { continue }
-                    $localPath = ([uri]$url).LocalPath
-                    if (-not $localPath) { continue }
-                    $localPath = [System.IO.Path]::GetFullPath($localPath).TrimEnd('\\')
-                    if ($localPath -ieq $target) { $existing = $w; break }
-                } catch { }
-            }
-
-            if ($existing) {
-                try { $existing.Visible = $true } catch { }
-                try { Ensure-ForegroundWindow ([IntPtr]$existing.HWND) } catch { }
-            }
-            else {
-                Start-Process explorer.exe -ArgumentList $buildOutputPath
-            }
-        }
-    } catch {
-        Start-Process explorer.exe -ArgumentList $buildOutputPath
-    }
-}

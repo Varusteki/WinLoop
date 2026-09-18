@@ -36,9 +36,9 @@ TestResults/
 # --- WinLoop project outputs / artifacts ---
 # Local build snapshots (generated)
 build/
-
 # Installer outputs (generated)
 release/*.exe
+release/*.zip
 
 # Temporary working directory
 tmp/
@@ -46,8 +46,24 @@ tmp/
 # Archived/migrated content folder (optional to keep out of repo)
 deprecated/
 
+# Reference projects cloned locally for study (not part of this repo)
+._wg/
+WGestures/
+
+# Ad-hoc publish output used for local verification
+probe-out/
+
+# Local geometry regression tool (references the main project, not shipped)
+Tools/
+
 # Logs / runtime data
 *.log
+
+# 历史归档目录：里面的文件要进仓库（原因见 docs/archive/README.md），
+# 但 PowerShell / 报告类临时产物不追踪。
+docs/archive/**/*.log
+docs/archive/**/report.txt
+docs/archive/**/_sc.txt/
 
 # App runtime config (in case it gets created locally)
 # (Actual config lives under %LOCALAPPDATA% and should not be in repo)

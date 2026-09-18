@@ -20,10 +20,23 @@ namespace WinLoop.SystemIntegration
         private DateTime _middleButtonDownTime;
         private System.Timers.Timer _triggerTimer;
         private Point _middleButtonDownPosition;
+        private IntPtr _targetWindow = IntPtr.Zero; // 中键按下瞬间锁定的目标窗口
         private readonly object _stateLock = new object(); // 状态锁
 
         public event Action<Point> MiddleButtonTriggered;
         public event Action MiddleButtonReleased;
+
+        /// <summary>
+        /// 菜单显示期间的鼠标移动事件（坐标已转换为 WPF 逻辑坐标）。
+        /// 用于替代菜单窗口的轮询定时器，比 16ms 轮询更跟手。
+        /// </summary>
+        public event Action<Point> MouseMoved;
+
+        /// <summary>
+        /// 中键按下瞬间锁定的目标窗口句柄。菜单打开期间保持不变，
+        /// 松开中键时应使用该句柄而不是重新取前台窗口。
+        /// </summary>
+        public IntPtr TargetWindow => _targetWindow;
 
         public int TriggerDelayMs { get; set; } = 200;
 
@@ -49,7 +62,9 @@ namespace WinLoop.SystemIntegration
         private const int WH_MOUSE_LL = 14;
         private const int WM_MBUTTONDOWN = 0x0207;
         private const int WM_MBUTTONUP = 0x0208;
+        private const int WM_MOUSEMOVE = 0x0200;
         private const int HC_ACTION = 0;
+        private const uint GA_ROOT = 2;
 
         [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
@@ -63,6 +78,109 @@ namespace WinLoop.SystemIntegration
 
         [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
         private static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr WindowFromPoint(POINT point);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetAncestor(IntPtr hwnd, uint gaFlags);
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetForegroundWindow();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetDesktopWindow();
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr GetShellWindow();
+
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentProcessId();
+
+        /// <summary>
+        /// 解析鼠标所在位置的顶层窗口。会过滤掉桌面、任务栏与 WinLoop 自身的窗口，
+        /// 这些情况下回退到当前前台窗口。
+        /// </summary>
+        private static IntPtr ResolveTargetWindow(int x, int y)
+        {
+            IntPtr hwnd = IntPtr.Zero;
+            try
+            {
+                var pt = new POINT { X = x, Y = y };
+                IntPtr hit = WindowFromPoint(pt);
+                if (hit != IntPtr.Zero)
+                {
+                    hwnd = GetAncestor(hit, GA_ROOT);
+                    if (hwnd == IntPtr.Zero)
+                    {
+                        hwnd = hit;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                App.Log($"ResolveTargetWindow failed: {ex.Message}");
+            }
+
+            // 过滤：桌面 / 任务栏 / 自身进程的窗口都不是有效操作目标
+            if (IsInvalidTarget(hwnd))
+            {
+                IntPtr fg = GetForegroundWindow();
+                if (!IsInvalidTarget(fg))
+                {
+                    return fg;
+                }
+                return IntPtr.Zero;
+            }
+
+            return hwnd;
+        }
+
+        private static bool IsInvalidTarget(IntPtr hwnd)
+        {
+            if (hwnd == IntPtr.Zero)
+            {
+                return true;
+            }
+
+            try
+            {
+                if (hwnd == GetDesktopWindow() || hwnd == GetShellWindow())
+                {
+                    return true;
+                }
+
+                // 任务栏窗口类名为 Shell_TrayWnd / Shell_SecondaryTrayWnd
+                var sb = new System.Text.StringBuilder(256);
+                GetClassName(hwnd, sb, sb.Capacity);
+                string cls = sb.ToString();
+                if (cls == "Shell_TrayWnd" || cls == "Shell_SecondaryTrayWnd")
+                {
+                    return true;
+                }
+
+                // 过滤 WinLoop 自身进程的窗口（菜单覆盖层等）
+                uint pid;
+                GetWindowThreadProcessId(hwnd, out pid);
+                if (pid == GetCurrentProcessId())
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // 解析失败时按无效目标处理，走回退逻辑
+                return true;
+            }
+
+            return false;
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Auto)]
+        private static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
 
         public MouseHookService()
         {
@@ -167,6 +285,12 @@ namespace WinLoop.SystemIntegration
                         _middleButtonDownTime = DateTime.Now;
                         _middleButtonDownPosition = new Point(hookStruct.pt.X, hookStruct.pt.Y);
 
+                        // 在按下的瞬间锁定目标窗口。
+                        // 这样即使用户随后切换到别的窗口、或菜单自身抢到前台，
+                        // 操作对象仍然是按下中键时鼠标所指的那个窗口。
+                        _targetWindow = ResolveTargetWindow(hookStruct.pt.X, hookStruct.pt.Y);
+                        App.Log($"Target window locked: {_targetWindow}");
+
                         // 停止并释放旧定时器
                         if (_triggerTimer != null)
                         {
@@ -192,6 +316,26 @@ namespace WinLoop.SystemIntegration
                         App.Log("Starting timer...");
                         _triggerTimer.Start();
                         App.Log("Timer started");
+                    }
+                    else if (msg == WM_MOUSEMOVE)
+                    {
+                        // 仅在按住中键期间推送移动事件给菜单窗口更新高亮。
+                        // 这样可省去菜单窗口 16ms 的轮询定时器，且跟随更精确。
+                        if (_isMiddleButtonDown)
+                        {
+                            var handler = MouseMoved;
+                            if (handler != null)
+                            {
+                                try
+                                {
+                                    handler(new Point(hookStruct.pt.X, hookStruct.pt.Y));
+                                }
+                                catch (Exception ex)
+                                {
+                                    App.Log($"MouseMoved handler error: {ex.Message}");
+                                }
+                            }
+                        }
                     }
                     else if (msg == WM_MBUTTONUP)
                     {

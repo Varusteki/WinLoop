@@ -6,5 +6,36 @@
     <Application.Resources>
         <!-- Make tray icon available as a resource for window icons -->
         <BitmapImage x:Key="AppIcon" UriSource="pack://application:,,,/Resources/trayIcon.ico" />
+
+        <!-- ==================== 界面字体 ====================
+             字体文件已作为 Resource 打进程序集，下面用 pack:// URI 显式引用，
+             不依赖目标机器是否安装该字体。这样在任何设备上渲染结果完全一致。
+
+             ⚠️ 为什么必须走内嵌：
+             只写 FontFamily="Noto Sans SC" 时，如果目标机没装这个字体，
+             WPF 会**静默回退**到微软雅黑 —— 不报错、不提示。结果是
+             字宽、字间距、标题与正文的层级落差全部走形，
+             而开发者本机（装了字体）看到的一切正常，属于典型的
+             "在我机器上是好的"问题。
+
+             ⚠️ 为什么这里写了两个 pack URI（实测踩到的坑）：
+             这两个 otf 的内嵌家族名**并不相同** ——
+               - NotoSansSC-Regular.otf → Family = "Noto Sans SC"
+               - NotoSansSC-Medium.otf  → Family = "Noto Sans SC Medium"
+             只写一个 "#Noto Sans SC" 的话，Medium 那个字体根本进不了这个家族，
+             于是 FontWeight="SemiBold" 找不到更粗的字面，WPF 只能拿 Regular
+             做伪粗（笔画被算法加宽，边缘发糊），或者干脆不粗 ——
+             标题与正文就区分不出来了。
+
+             解法：用 WPF 的「同一家族、不同字重」语法 ——
+             在 URI 里用**,** 分隔多个字体源，并在名字后用**逗号+字重**标注：
+                 ".../Resources/Fonts/#Noto Sans SC, Normal; Noto Sans SC Medium, Bold"
+             前面一段用分号分隔不同「家族」；同一家族内不同字重靠逗号后的
+             关键字区分。这样 Normal 走 Regular、SemiBold/Bold 走 Medium，
+             与普通的系统字体行为一致，XAML 里照常写 FontWeight 即可。
+
+             最后挂微软雅黑兜底：万一资源 URI 失效（例如发布时资源被裁掉），
+             还能退回一个合格的中文界面字体，不至于显示成方框。 -->
+        <FontFamily x:Key="UiFontFamily">pack://application:,,,/Resources/Fonts/#Noto Sans SC, Regular, Medium; Microsoft YaHei UI, Segoe UI</FontFamily>
     </Application.Resources>
 </Application>

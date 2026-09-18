@@ -42,6 +42,7 @@ namespace WinLoop.Config
                             cfg.MinimizeToTray = dto.MinimizeToTray;
                             cfg.TriggerDelay = dto.TriggerDelay;
                             cfg.XuanKongSi = dto.XuanKongSi ?? new XuanKongSiConfig();
+                            cfg.SizingUnitVersion = dto.SizingUnitVersion;
 
                             // Backward compatibility: read legacy property name if present.
                             // Avoid embedding the legacy name as a contiguous string literal.
@@ -59,6 +60,7 @@ namespace WinLoop.Config
                                     }
                                 }
                             }
+                            MigrateSizingUnit(cfg);
                             return cfg;
                         }
                     }
@@ -73,6 +75,7 @@ namespace WinLoop.Config
                         App.Log("Config deserialized to null, returning default AppConfig.");
                         return new AppConfig();
                     }
+                    MigrateSizingUnit(cfg2);
                     return cfg2;
                 }
             }
@@ -82,6 +85,34 @@ namespace WinLoop.Config
             }
 
             return new AppConfig();
+        }
+
+        /// <summary>
+        /// 把老配置的尺寸单位补标为当前版本。
+        ///
+        /// v1（无标记）的字段语义是「固定像素」，v2 是「100% 缩放下的逻辑像素」。
+        /// 两者在 100% 缩放时数值完全等价，因此这里**只补标记、不动任何数值** ——
+        /// 用户的 50/28/70/90 原样保留，含义从"永远画这么大"变成"100% 缩放下画这么大"。
+        ///
+        /// 标记的用处：将来若真需要按屏幕把老值反算一次（本方案不需要），
+        /// 或需要区分"从未迁移"与"已迁移"，有据可依。
+        /// </summary>
+        private static void MigrateSizingUnit(AppConfig cfg)
+        {
+            try
+            {
+                if (cfg == null) return;
+                if (cfg.SizingUnitVersion >= AppConfig.SizingUnitCurrent) return;
+
+                App.Log($"Migrating sizing unit v{cfg.SizingUnitVersion} -> v{AppConfig.SizingUnitCurrent}"
+                        + " (values unchanged: v1 pixels are numerically identical to v2 DIP baseline).");
+
+                cfg.SizingUnitVersion = AppConfig.SizingUnitCurrent;
+            }
+            catch (System.Exception ex)
+            {
+                App.Log("MigrateSizingUnit error: " + ex.Message);
+            }
         }
 
         public void SaveConfig(AppConfig config)
@@ -100,6 +131,9 @@ namespace WinLoop.Config
                     MinimizeToTray = config.MinimizeToTray,
                     TriggerDelay = config.TriggerDelay,
                     XuanKongSi = config.XuanKongSi,
+                    // 落盘时一律写成当前单位版本：存进去的值就是 DIP 基准值，
+                    // 不能把读到时的旧标记再写回去。
+                    SizingUnitVersion = AppConfig.SizingUnitCurrent,
                     ActionMapping = new System.Collections.Generic.Dictionary<string, WinLoop.Models.WindowAction>()
                 };
 
@@ -111,6 +145,23 @@ namespace WinLoop.Config
                 string json = JsonSerializer.Serialize(dto, new JsonSerializerOptions { WriteIndented = true });
                 App.Log($"Saving config to {_configPath}");
                 App.Log(json);
+
+                // 落盘前把「上一次的配置」留一份 .bak：配置大多是用户手工调出来的，
+                // 而这里是无条件覆盖，一旦被错误的值写坏就找不回来了。
+                // 备份失败不能影响保存本身，所以单独包一层。
+                try
+                {
+                    if (File.Exists(_configPath))
+                    {
+                        string bak = _configPath + ".bak";
+                        File.Copy(_configPath, bak, true);
+                    }
+                }
+                catch (System.Exception exBak)
+                {
+                    App.Log("SaveConfig backup skipped: " + exBak.Message);
+                }
+
                 File.WriteAllText(_configPath, json);
             }
             catch (System.Exception ex)
@@ -162,5 +213,12 @@ namespace WinLoop.Config
         public bool MinimizeToTray { get; set; }
         public int TriggerDelay { get; set; }
         public XuanKongSiConfig XuanKongSi { get; set; }
+
+        /// <summary>
+        /// 尺寸单位版本。老 config.json 无此字段 → 反序列化为 0（= v1），
+        /// 供 <see cref="ConfigManager"/> 识别老配置。
+        /// 注意 DTO 侧**不能**给非 0 默认值，否则老配置会被误判成"已迁移"。
+        /// </summary>
+        public int SizingUnitVersion { get; set; }
     }
 }

@@ -5,6 +5,8 @@
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <UseWPF>true</UseWPF>
     <UseWindowsForms>true</UseWindowsForms>
+    <!-- Per-Monitor V2 DPI 感知：修复 125%/150% 缩放下的坐标错位 -->
+    <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
   <!-- Use the copied tray icon in WinLoop\Resources as the application icon and as a WPF resource -->
@@ -17,6 +19,23 @@
     <Resource Include="Resources\trayIcon.ico" />
     <!-- Include skull XAML resource -->
     <Resource Include="Resources\skull.xaml" />
+
+    <!-- ==================== 内嵌字体 ====================
+         界面字体随包分发，保证在任何机器上渲染一致。
+         只引字体名（如 "Noto Sans SC"）是不够的 —— 目标机没装该字体时
+         WPF 会静默回退到微软雅黑，字间距和标题层级全部走形，而且不报错。
+         打成 Resource 后用 pack:// URI 引用，见 App.xaml 的 UiFontFamily。
+
+         只带两个静态字重：
+           - Regular  → FontWeight="Normal"（正文）
+           - Medium   → FontWeight="SemiBold"（标题/选中态）
+         Bold 在界面里没有任何引用处，不带，省 8.5MB。
+
+         注：不用 /c/Windows/Fonts/NotoSansSC-VF.ttf（可变字体）。
+         WPF 对 OpenType 可变字体的字重轴支持不可靠，SemiBold 很可能
+         被忽略而退化成 Regular —— 那标题和正文就分不出来了。 -->
+    <Resource Include="Resources\Fonts\NotoSansSC-Regular.otf" />
+    <Resource Include="Resources\Fonts\NotoSansSC-Medium.otf" />
 
     <!-- XuanKongSi default images -->
     <Content Include="Resources\XuanKongSi\*.png">

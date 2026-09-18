@@ -1,0 +1,325 @@
+﻿<Window x:Class="WinLoop.UI.ColorPickerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="选择颜色" Width="340" SizeToContent="Height"
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False"
+        FontSize="13" FontFamily="{StaticResource UiFontFamily}"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="ClearType">
+    <Window.Resources>
+        <!-- 与设置窗口保持同一套令牌语言，避免两个窗口像两个软件 -->
+        <SolidColorBrush x:Key="CardBg"    Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="WindowBg"  Color="#FFF7F7F7"/>
+        <SolidColorBrush x:Key="LineEdge"  Color="#FFE4E4E4"/>
+        <SolidColorBrush x:Key="TextMain"  Color="#FF1B1B1B"/>
+        <SolidColorBrush x:Key="TextSub"   Color="#FF5A5A5A"/>
+        <SolidColorBrush x:Key="TextFaint" Color="#FF8A8A8A"/>
+        <SolidColorBrush x:Key="Accent"    Color="#FF0F6CBD"/>
+        <SolidColorBrush x:Key="AccentHot" Color="#FF1A7AD1"/>
+        <SolidColorBrush x:Key="AccentDown" Color="#FF0B5AA0"/>
+
+        <Style x:Key="FieldBorder" TargetType="Border">
+            <Setter Property="Background" Value="{StaticResource CardBg}"/>
+            <Setter Property="BorderBrush" Value="#FFD0D0D0"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="CornerRadius" Value="4"/>
+        </Style>
+
+        <!-- 格式下拉：自绘模板，只保留「文字 + 右侧小箭头」。
+             默认 ComboBox 模板在这个 340px 宽的小窗口里会带系统感的方角与厚重边框，
+             跟旁边的输入框、按钮不像一套东西。 -->
+        <Style x:Key="ModeComboItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Height" Value="26"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
+            <Setter Property="Padding" Value="8,0"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Margin="3,1">
+                            <ContentPresenter Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FFEAF2FB"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#FFE1EDFA"/>
+                                <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+                                <Setter Property="FontWeight" Value="Medium"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ModeComboStyle" TargetType="ComboBox">
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ModeComboItemStyle}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <ToggleButton x:Name="ToggleButton" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay,
+                                                      RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border x:Name="Bd" CornerRadius="4"
+                                                Background="{StaticResource CardBg}"
+                                                BorderBrush="#FFD0D0D0" BorderThickness="1">
+                                            <Path x:Name="Arrow" Data="M 0 0 L 4 4 L 8 0"
+                                                  Stroke="#FF6A6A6A" StrokeThickness="1.6"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                  HorizontalAlignment="Right" VerticalAlignment="Center"
+                                                  Margin="0,0,10,0"/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="BorderBrush" Value="#FFA9C7E8"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <!-- 选中项文字：留出右侧箭头的位置 -->
+                            <ContentPresenter x:Name="ContentSite" IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              ContentStringFormat="{TemplateBinding SelectionBoxItemStringFormat}"
+                                              Margin="10,0,26,0"
+                                              VerticalAlignment="Center" HorizontalAlignment="Left"/>
+
+                            <Popup x:Name="PART_Popup" AllowsTransparency="True" Focusable="False"
+                                   Placement="Bottom" VerticalOffset="2"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   PopupAnimation="Fade">
+                                <Border MinWidth="{TemplateBinding ActualWidth}"
+                                        MaxHeight="200" CornerRadius="6"
+                                        Background="{StaticResource CardBg}"
+                                        BorderBrush="#FFD0D0D0" BorderThickness="1"
+                                        Padding="0,4">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="10" ShadowDepth="1"
+                                                          Opacity="0.16" Color="#FF000000"/>
+                                    </Border.Effect>
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsPresenter/>
+                                    </ScrollViewer>
+                                </Border>
+                            </Popup>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FooterButton" TargetType="Button">
+            <Setter Property="Width" Value="72"/>
+            <Setter Property="Height" Value="30"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="5"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.9"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Opacity" Value="0.78"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <Border Background="{StaticResource WindowBg}" Padding="14">
+        <StackPanel>
+
+            <!-- ① SV 二维调色板：横向饱和度、纵向明度。
+                 用 Canvas + 两张叠加渐变实现，鼠标按下/拖动实时取色。
+                 选点圆环用两条描边（白外圈 + 灰内圈），保证在浅色和深色区都看得见。
+
+                 尺寸说明：Canvas 自身不设 Width，靠父级 StackPanel 撑满可用宽度；
+                 内部三层用 Rectangle（会自动拉伸填满 Canvas），
+                 精确尺寸在 Loaded 后用 ActualWidth/ActualHeight 读出来，
+                 避免"硬编码宽度 ≠ 实际可用宽度"导致右侧取不到纯饱和色。 -->
+            <Canvas Name="SvCanvas" Height="212" ClipToBounds="True"
+                    MouseLeftButtonDown="SvCanvas_MouseLeftButtonDown"
+                    MouseMove="SvCanvas_MouseMove"
+                    MouseLeftButtonUp="SvCanvas_MouseLeftButtonUp"
+                    Cursor="Cross">
+                <Border x:Name="SvBase" CornerRadius="4"/>
+                <Rectangle x:Name="SvWhite">
+                    <Rectangle.Fill>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#FFFFFFFF" Offset="0"/>
+                            <GradientStop Color="#00FFFFFF" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Rectangle.Fill>
+                </Rectangle>
+                <Rectangle x:Name="SvBlack">
+                    <Rectangle.Fill>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Color="#00000000" Offset="0"/>
+                            <GradientStop Color="#FF000000" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Rectangle.Fill>
+                </Rectangle>
+                <Ellipse x:Name="SvMarker" Width="13" Height="13"
+                         Stroke="#FFFFFFFF" StrokeThickness="2"
+                         IsHitTestVisible="False"/>
+            </Canvas>
+
+            <!-- ② 色相滑杆：彩虹渐变 + 可拖动游标。
+                 同理不设固定宽度，运行时按 Canvas.ActualWidth 铺满。 -->
+            <Canvas Name="HueCanvas" Height="24" Margin="0,14,0,0" ClipToBounds="False"
+                    MouseLeftButtonDown="HueCanvas_MouseLeftButtonDown"
+                    MouseMove="HueCanvas_MouseMove"
+                    MouseLeftButtonUp="HueCanvas_MouseLeftButtonUp"
+                    Cursor="Hand">
+                <Border x:Name="HueBar" Height="12" Canvas.Top="6" CornerRadius="6">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="#FFFF0000" Offset="0"/>
+                            <GradientStop Color="#FFFFFF00" Offset="0.1667"/>
+                            <GradientStop Color="#FF00FF00" Offset="0.3333"/>
+                            <GradientStop Color="#FF00FFFF" Offset="0.5"/>
+                            <GradientStop Color="#FF0000FF" Offset="0.6667"/>
+                            <GradientStop Color="#FFFF00FF" Offset="0.8333"/>
+                            <GradientStop Color="#FFFF0000" Offset="1"/>
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
+                <Ellipse x:Name="HueMarker" Width="16" Height="16" Canvas.Top="4"
+                         Stroke="#FFFFFFFF" StrokeThickness="2.5" IsHitTestVisible="False"/>
+            </Canvas>
+
+            <!-- ③ 输入行（照 PixPin）：左模式下拉 + 右「每参数一个输入框」。
+                 四个格式互转：HEX / RGB / HSV / HSL。
+                 - HEX：1 个宽框（#RRGGBB）
+                 - RGB/HSV/HSL：3 个等宽窄框，分别对应各自的三个分量
+                   这样用户改单个分量时不必重打整串，光标也不会因为重排而跳位。
+                 注：PixPin 在这一行最左侧是「屏幕吸管」按钮，本版本不做吸管，
+                     因此该位置留空，不塞多余的色块。
+                 当前版本只输出 6 位不透明色，因此也不做透明度滑杆（已与用户确认）。 -->
+            <Grid Margin="0,14,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <ComboBox x:Name="ModeCombo" Grid.Column="0" Width="78" Height="30"
+                          Margin="0,0,8,0" VerticalContentAlignment="Center"
+                          Style="{StaticResource ModeComboStyle}"
+                          SelectionChanged="ModeCombo_SelectionChanged">
+                    <ComboBoxItem Content="HEX"/>
+                    <ComboBoxItem Content="RGB"/>
+                    <ComboBoxItem Content="HSV"/>
+                    <ComboBoxItem Content="HSL"/>
+                </ComboBox>
+
+                <!-- 输入区：单框（HEX）与三框（RGB/HSV/HSL）叠在同一格里，
+                     靠 Visibility 切换，避免整行宽度跳动。 -->
+                <Grid Grid.Column="1">
+
+                    <!-- HEX：一个整体输入框 -->
+                    <Border x:Name="HexPanel" Style="{StaticResource FieldBorder}">
+                        <TextBox Name="HexBox" Height="28" BorderThickness="0"
+                                 Background="Transparent"
+                                 VerticalContentAlignment="Center" Padding="8,0"
+                                 FontFamily="Consolas, {StaticResource UiFontFamily}" FontSize="13"
+                                 Foreground="{StaticResource TextMain}"
+                                 TextChanged="Component_TextChanged"/>
+                    </Border>
+
+                    <!-- RGB / HSV / HSL：三个分量框并排 -->
+                    <Grid x:Name="TriPanel" Visibility="Collapsed">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="6"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+
+                        <Border Grid.Column="0" Style="{StaticResource FieldBorder}">
+                            <TextBox Name="Comp1Box" Height="28" BorderThickness="0"
+                                     Background="Transparent" TextAlignment="Center"
+                                     VerticalContentAlignment="Center" Padding="2,0"
+                                     FontFamily="Consolas, {StaticResource UiFontFamily}" FontSize="13"
+                                     Foreground="{StaticResource TextMain}"
+                                     TextChanged="Component_TextChanged"/>
+                        </Border>
+                        <Border Grid.Column="2" Style="{StaticResource FieldBorder}">
+                            <TextBox Name="Comp2Box" Height="28" BorderThickness="0"
+                                     Background="Transparent" TextAlignment="Center"
+                                     VerticalContentAlignment="Center" Padding="2,0"
+                                     FontFamily="Consolas, {StaticResource UiFontFamily}" FontSize="13"
+                                     Foreground="{StaticResource TextMain}"
+                                     TextChanged="Component_TextChanged"/>
+                        </Border>
+                        <Border Grid.Column="4" Style="{StaticResource FieldBorder}">
+                            <TextBox Name="Comp3Box" Height="28" BorderThickness="0"
+                                     Background="Transparent" TextAlignment="Center"
+                                     VerticalContentAlignment="Center" Padding="2,0"
+                                     FontFamily="Consolas, {StaticResource UiFontFamily}" FontSize="13"
+                                     Foreground="{StaticResource TextMain}"
+                                     TextChanged="Component_TextChanged"/>
+                        </Border>
+                    </Grid>
+
+                </Grid>
+            </Grid>
+
+            <!-- 分量名提示：跟着当前格式变，位置对应上面三个框 -->
+            <Grid x:Name="CompLabelRow" Margin="0,5,0,0" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="86"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="6"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="Comp1Label" Grid.Column="1" FontSize="11"
+                           Foreground="{StaticResource TextFaint}" TextAlignment="Center"/>
+                <TextBlock x:Name="Comp2Label" Grid.Column="3" FontSize="11"
+                           Foreground="{StaticResource TextFaint}" TextAlignment="Center"/>
+                <TextBlock x:Name="Comp3Label" Grid.Column="5" FontSize="11"
+                           Foreground="{StaticResource TextFaint}" TextAlignment="Center"/>
+            </Grid>
+
+
+            <!-- ④ 底部按钮 -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                <Button x:Name="CancelButton" Content="取消" Margin="0,0,8,0"
+                        Style="{StaticResource FooterButton}"
+                        Background="{StaticResource CardBg}" BorderBrush="#FFD0D0D0"
+                        Foreground="{StaticResource TextSub}" Click="CancelButton_Click"/>
+                <Button x:Name="OkButton" Content="确认"
+                        Style="{StaticResource FooterButton}"
+                        Background="{StaticResource Accent}" BorderBrush="{StaticResource Accent}"
+                        Foreground="#FFFFFFFF" Click="OkButton_Click"/>
+            </StackPanel>
+
+        </StackPanel>
+    </Border>
+</Window>

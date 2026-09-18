@@ -61,6 +61,40 @@ namespace WinLoop
             base.OnStartup(e);
             _instance = this;
 
+            // ---------- 字体自检开关 ----------
+            // 内嵌字体的 pack URI 是否生效，**只能在真实入口程序集里验证**：
+            // pack://application:,,, 的解析基准是入口程序集，用外部探针程序
+            // 去引 WinLoop.dll 里的资源永远解析不到（会静默回退到 Arial），
+            // 那是探针的问题、不是字体的问题。所以这个自检必须挂在 WinLoop.exe 上。
+            //
+            // 用法： WinLoop.exe --fontcheck [日志输出路径]
+            // 输出： 在控制台与日志里打印字体的实际解析结果。
+            if (e.Args != null && e.Args.Length > 0
+                && string.Equals(e.Args[0], "--fontcheck", StringComparison.OrdinalIgnoreCase))
+            {
+                string outPath = e.Args.Length > 1 ? e.Args[1] : null;
+                UI.FontSelfCheck.Run(outPath);
+                Shutdown(0);
+                return;
+            }
+
+            // ---------- 设置窗口自检开关 ----------
+            // 构造设置窗口、遍历四个页面并逐页截图，全部完成后自动退出。
+            // 用途：验证 XAML 在**运行时**能否正常解析。
+            // 这类问题编译期查不出来 —— 例如把 TargetType="CheckBox" 的样式
+            // 套到 RadioButton 上，编译通过，但一开窗就抛
+            // "设置属性 System.Windows.FrameworkElement.Style 时引发了异常"。
+            //
+            // 用法： WinLoop.exe --settingscheck [输出目录]
+            if (e.Args != null && e.Args.Length > 0
+                && string.Equals(e.Args[0], "--settingscheck", StringComparison.OrdinalIgnoreCase))
+            {
+                string dir = e.Args.Length > 1 ? e.Args[1] : null;
+                UI.SettingsSelfCheck.Run(dir);
+                Shutdown(0);
+                return;
+            }
+
             // 标记处于启动阶段，SettingsWindow 在此阶段应被抑制（以避免启动时自动弹出）
             try
             {
@@ -221,9 +255,13 @@ namespace WinLoop
                 SystemIntegration.AutoStartManager.ApplyAutoStartSetting(config.AutoStart);
                 Log($"Auto-start setting applied: {config.AutoStart}");
 
+                // 高亮判定的诊断日志开关（默认为关，见 DiagnosticHighlightLogging）
+                InitDiagnosticFlag();
+
                 // 订阅事件
                 _mouseHookService.MiddleButtonTriggered += OnMiddleButtonTriggered;
                 _mouseHookService.MiddleButtonReleased += OnMiddleButtonReleased;
+                _mouseHookService.MouseMoved += OnGlobalMouseMoved;
                 _keyboardHookService.HotkeyTriggered += OnXuanKongSiTriggered;
                 _keyboardHookService.EscapePressed += OnXuanKongSiEscape;
 
@@ -422,13 +460,42 @@ namespace WinLoop
         {
             try
             {
-                Log($"Action selected: {action}");
-                _windowManagementService?.ExecuteAction(action);
+                // 使用中键按下瞬间锁定的目标窗口，而不是此刻的前台窗口。
+                // 菜单弹出后前台窗口可能已变成菜单自身或别的窗口，实时取值会打错对象。
+                IntPtr target = _mouseHookService?.TargetWindow ?? IntPtr.Zero;
+                Log($"Action selected: {action}, target window: {target}");
+                _windowManagementService?.ExecuteAction(action, target);
             }
             catch (Exception ex)
             {
                 Log($"OnActionSelected error: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// 全局鼠标移动（钩子推送）。仅在菜单可见时转发给菜单窗口更新高亮。
+        /// </summary>
+        private void OnGlobalMouseMoved(Point position)
+        {
+            try
+            {
+                var overlay = _menuOverlayWindow;
+                if (overlay != null && overlay.IsVisible)
+                {
+                    // 钩子回调运行在钩子线程，需切回 UI 线程操作 WPF 元素
+                    overlay.Dispatcher.BeginInvoke(
+                        System.Windows.Threading.DispatcherPriority.Input,
+                        new Action(() =>
+                        {
+                            try
+                            {
+                                overlay.UpdateHighlightFromScreen(position);
+                            }
+                            catch { }
+                        }));
+                }
+            }
+            catch { }
         }
 
         protected override void OnExit(ExitEventArgs e)
@@ -468,6 +535,48 @@ namespace WinLoop
         {
             var exception = e.ExceptionObject as Exception;
             Log($"UnhandledException: {exception?.Message}\n{exception?.StackTrace}");
+        }
+
+        /// <summary>
+        /// 高亮判定的诊断日志开关（默认关闭）。
+        ///
+        /// 打开后每次高亮更新都会把「喂进判定的坐标 / 菜单中心 / 算出的扇区」写进日志，
+        /// 用于排查「某个方向的扇区在启动初期不触发」这类时序问题 ——
+        /// 这类问题的特征是判定本身没错，而是**喂进来的坐标**在特定时刻不对。
+        ///
+        /// 打开方式（二选一）：
+        ///   - 程序目录放一个空文件 `diagnostic.flag`；
+        ///   - 设环境变量 `WINLOOP_DIAGNOSTIC=1`。
+        /// 排查完请关掉：它会显著增大日志体积（每次鼠标移动写一行）。
+        /// </summary>
+        public static bool DiagnosticHighlightLogging { get; private set; }
+
+        private static void InitDiagnosticFlag()
+        {
+            try
+            {
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                if (!string.IsNullOrEmpty(baseDir) &&
+                    File.Exists(Path.Combine(baseDir, "diagnostic.flag")))
+                {
+                    DiagnosticHighlightLogging = true;
+                }
+
+                string env = Environment.GetEnvironmentVariable("WINLOOP_DIAGNOSTIC");
+                if (!string.IsNullOrEmpty(env) && env != "0")
+                {
+                    DiagnosticHighlightLogging = true;
+                }
+            }
+            catch
+            {
+                // 诊断开关失败不影响正常功能
+            }
+
+            if (DiagnosticHighlightLogging)
+            {
+                Log("Diagnostic highlight logging enabled");
+            }
         }
 
         public static void Log(string message)
