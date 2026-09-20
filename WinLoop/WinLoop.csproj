@@ -9,14 +9,28 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
 
-  <!-- Use the copied tray icon in WinLoop\Resources as the application icon and as a WPF resource -->
+  <!-- 图标分两套（2026-09-20 最终形态）：
+       - appIcon.ico  → ApplicationIcon（exe 图标）+ App.xaml 的 AppIcon 资源
+                        档位 16/20/24/32/40/48/64/96/128/256（10 档，覆盖 100%~400% 缩放）
+       - trayIcon.ico → 托盘图标（WPF Resource）：App.xaml.cs 通过 pack URI 引用
+                        档位 16/20/24/32/48（托盘实际只用这几档，多余档位白占体积）
+
+       两套**图形完全相同**（完整三层：圆环 + 八角星 + 骷髅）、**底色也相同**
+       （中蓝 #0F6CBD 圆角矩形铺满画布），只有尺寸档位不同。
+       底色为什么必须是「中等亮度饱和色」：图形本体只有黑(53%)/白(43%)/金(2%) 三色，
+       底色要同时与黑、白都拉开对比度，相对亮度 L 必须落在 [0.10, 0.30] ——
+       任何灰度色（含浅灰、深灰）天生不合格，只能满足一边。详见 make_icons.py 顶部注释。
+
+       两者由 Tools/IconGen 渲染、probe-out/icon/make_icons.py 合成。 -->
   <PropertyGroup>
-    <ApplicationIcon>Resources\trayIcon.ico</ApplicationIcon>
+    <ApplicationIcon>Resources\appIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Include the icon as Resource so WPF windows can reference it -->
+    <!-- 托盘图标：App.xaml.cs 通过 pack URI 引用 -->
     <Resource Include="Resources\trayIcon.ico" />
+    <!-- 应用图标：供 ApplicationIcon 与 App.xaml 的 AppIcon 资源使用 -->
+    <Resource Include="Resources\appIcon.ico" />
     <!-- Include skull XAML resource -->
     <Resource Include="Resources\skull.xaml" />
 

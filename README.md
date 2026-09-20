@@ -1,3 +1,7 @@
+<div align="center">
+  <img src="docs/logo.png" width="128" alt="WinLoop —— Headshot 菜单样式，右上扇区高亮">
+</div>
+
 # WinLoop
 
 适用于 Windows 平台的快捷窗口管理工具 - 按住鼠标中键，快速管理窗口！
@@ -13,9 +17,12 @@
 
 ### 🎨 4 种菜单样式
 - **圆环（BasicRadial）**：圆环底色 + 蓝色高亮选中，简洁直观
-- **八角星（CSHeadshotOctagon）**：硬朗的八角星布局
+- **Headshot（CSHeadshotOctagon）**：八角星造型的硬朗布局 —— **默认样式**
 - **蜘蛛网（SpiderWeb）**：多层同心环 + 放射线
 - **八卦（Bagua）**：八卦图形风格
+
+> **命名说明**：设置页上的样式项 `Headshot` 取自 CS 的爆头图标，
+> 早期文档里叫「八角星」—— 指同一个样式，造型仍是八角星。
 
 ### 🪟 丰富的窗口操作
 - **基础操作**：最小化、最大化、显示桌面 (Win+D)
@@ -134,9 +141,9 @@ WinLoop/
 │   ├── Menus/                     # 菜单样式实现
 │   │   ├── RadialMenu.cs          # 菜单基类
 │   │   ├── BasicRadialMenu.cs     # 圆环
-│   │   ├── CSHeadshotMenu.cs      # 八角星
-│   │   ├── CSHeadshotLayers.cs    # 八角星图层数据
-│   │   ├── CSHeadshotPathData.cs  # 八角星路径数据
+│   │   ├── CSHeadshotMenu.cs      # Headshot（八角星造型）
+│   │   ├── CSHeadshotLayers.cs    # Headshot 图层数据
+│   │   ├── CSHeadshotPathData.cs  # Headshot 路径数据
 │   │   ├── SpiderWebMenu.cs       # 蜘蛛网
 │   │   ├── BaguaMenu.cs           # 八卦
 │   │   └── RadialMenuFactory.cs   # 按配置创建菜单实例
@@ -158,8 +165,9 @@ WinLoop/
 │   └── Resources/
 │       ├── Fonts/                 # 内嵌字体（Noto Sans SC Regular/Medium）
 │       ├── XuanKongSi/            # 悬空寺键位图（4 套双拼方案）
-│       ├── skull.xaml             # 八角星图形资源
-│       └── trayIcon.ico
+│       ├── skull.xaml             # 骷髅图形资源（Headshot 第 ③ 层）
+│       ├── appIcon.ico            # exe / 窗口图标（16~256，10 档）
+│       └── trayIcon.ico           # 托盘图标（16~48，5 档）
 ├── Tools/                         # 开发期小工具（不随包分发）
 │   ├── CpTest/                    # 颜色选择器真值测试
 │   ├── ConfigTester/              # 配置读写测试
@@ -205,7 +213,7 @@ WinLoop/
 - [x] **鼠标跟随优化**：由 16ms 轮询改为钩子事件推送
 - [x] **菜单动画**：弹出缩放淡入 / 收起淡出
 - [x] **更多窗口操作**：最大化还原切换、窗口置顶切换、关闭窗口
-- [x] **恢复 4 种菜单样式**：圆环 / 八角星 / 蜘蛛网 / 八卦
+- [x] **恢复 4 种菜单样式**：圆环 / Headshot / 蜘蛛网 / 八卦
 - [x] **代码清理**：移除约 500 行不可达代码
 
 #### 界面与体验迭代
@@ -216,6 +224,9 @@ WinLoop/
 - [x] **输入框统一等宽**：宽度令牌收进统一样式，行内单位提示移除
 - [x] **悬空寺图片预览**：宽度自适应、等比缩放，默认图也展示
 - [x] **运行时自检**：`--fontcheck` / `--settingscheck`
+- [x] **程序图标 / 托盘图标**：八角星主图 + 中蓝圆角底，多尺寸 ICO
+- [x] **默认样式改为 Headshot**，设置页该项显示名由「八角星」改为 `Headshot`
+- [x] **构建脚本内置缓存清理**：不再需要手工删 `bin`/`obj`
 
 ### 🔮 V0.3+ (未来)
 - [ ] 手势识别

@@ -27,7 +27,17 @@ namespace WinLoop.Models
         /// </summary>
         public const int SizingUnitCurrent = 2;
 
-        public MenuStyle MenuStyle { get; set; } = MenuStyle.BasicRadial;
+        /// <summary>
+        /// 默认菜单样式：**八角星（Headshot）**。
+        ///
+        /// 只在「没有配置文件」或「恢复默认值」时生效 ——
+        /// 已存在的 config.json 里存了显式值，不会被动改写（尊重用户选择）。
+        ///
+        /// ⚠️ 改这个默认值**不需要**动 <see cref="MenuStyle"/> 的成员顺序：
+        /// 枚举是整数值序列化进配置的（BasicRadial=0 / CSHeadshotOctagon=1 / …），
+        /// 插入或调换成员会让老配置的动作错位。
+        /// </summary>
+        public MenuStyle MenuStyle { get; set; } = MenuStyle.CSHeadshotOctagon;
         public BasicRadialMenuConfig BasicRadialMenuConfig { get; set; } = new BasicRadialMenuConfig();
         public CSHeadshotMenuConfig CSHeadshotMenuConfig { get; set; } = new CSHeadshotMenuConfig();
         public SpiderWebMenuConfig SpiderWebMenuConfig { get; set; } = new SpiderWebMenuConfig();

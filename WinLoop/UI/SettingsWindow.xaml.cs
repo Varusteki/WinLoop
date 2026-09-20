@@ -817,6 +817,9 @@ namespace WinLoop.UI
                 if (_config == null) return;
 
                 // 恢复配置中的菜单样式选择
+                // （面板可见性统一在方法末尾的 UpdateConfigPanels() 里刷新 ——
+                //   不要依赖这里赋值触发的 Checked 事件：RadioButton 赋同值不触发事件，
+                //   而且本方法在构造函数里、**早于**事件挂接就被调用了。）
                 switch (_config.MenuStyle)
                 {
                     case MenuStyle.CSHeadshotOctagon:

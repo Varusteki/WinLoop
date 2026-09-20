@@ -4,8 +4,11 @@
              xmlns:local="clr-namespace:WinLoop"
              ShutdownMode="OnExplicitShutdown">
     <Application.Resources>
-        <!-- Make tray icon available as a resource for window icons -->
-        <BitmapImage x:Key="AppIcon" UriSource="pack://application:,,,/Resources/trayIcon.ico" />
+        <!-- 窗口图标（完整三层：圆环 + 八角星 + 骷髅）。
+             托盘用的 trayIcon.ico **图形和底色完全相同**，只有尺寸档位更少
+             （托盘只会用到 16~48px），由 App.xaml.cs 通过 pack URI 单独加载。
+             两个文件都由 probe-out/icon/make_icons.py 从同一张主图合成。 -->
+        <BitmapImage x:Key="AppIcon" UriSource="pack://application:,,,/Resources/appIcon.ico" />
 
         <!-- ==================== 界面字体 ====================
              字体文件已作为 Resource 打进程序集，下面用 pack:// URI 显式引用，

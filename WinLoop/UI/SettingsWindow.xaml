@@ -460,7 +460,7 @@
         </Style>
 
         <!-- 勾选项（开机启动 / 最小化到托盘 / 启用悬空寺）与
-             单选组（样式选择：圆环/八角星/蜘蛛网/八卦）共用一套视觉。
+             单选组（样式选择：圆环/Headshot/蜘蛛网/八卦）共用一套视觉。
 
              ⚠️ 这里必须写**两份**样式，不能一份吃两家。
              WPF 对 `Style.TargetType` 的检查发生在**套用样式的那一刻**，
@@ -625,15 +625,18 @@
                                 <Border Style="{StaticResource GroupBorder}">
                                     <StackPanel>
 
-                                        <!-- ── 组：样式选择 ── -->
+                                        <!-- ── 组：样式选择 ──
+                                             注意：这里的 IsChecked 只是设计期的初始状态，
+                                             运行时一律由 PopulateUIFromConfig() 按配置覆盖。
+                                             当前程序默认样式是 Headshot，所以初始勾它。 -->
                                         <TextBlock Text="样式" Style="{StaticResource GroupHeaderStyle}"/>
                                         <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,12"/>
                                         <Grid Margin="0,0,0,4">
                                             <StackPanel Orientation="Horizontal">
-                                                <RadioButton Name="BasicRadialRadio" Content="圆环" IsChecked="True"
+                                                <RadioButton Name="BasicRadialRadio" Content="圆环"
                                                              Margin="0,0,24,0" VerticalAlignment="Center"
                                                              Style="{StaticResource RadioStyle}"/>
-                                                <RadioButton Name="CSHeadshotRadio" Content="八角星"
+                                                <RadioButton Name="CSHeadshotRadio" Content="Headshot" IsChecked="True"
                                                              Margin="0,0,24,0" VerticalAlignment="Center"
                                                              Style="{StaticResource RadioStyle}"/>
                                                 <RadioButton Name="SpiderWebRadio" Content="蜘蛛网"
@@ -727,7 +730,7 @@
                                         <!-- 兼容：原独立配色卡片名，代码按 isBasic 切它的可见性 -->
                                         <Border Name="BasicColorCard" Height="0" Visibility="Collapsed"/>
 
-                                        <!-- ── 组：八角星（八角星样式时显示） ── -->
+                                        <!-- ── 组：Headshot（八角星造型；选中 Headshot 时显示） ── -->
                                         <StackPanel Name="CSHeadshotConfigGrid" Visibility="Collapsed">
                                             <Border Style="{StaticResource RowSeparator}" Margin="0,14,0,0"/>
                                             <TextBlock Text="大小" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,2"/>

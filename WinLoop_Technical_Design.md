@@ -16,8 +16,17 @@ WinLoop 是一款适用于 Windows 平台的快捷窗口管理工具，核心包
 - **颜色选择器**：设置页所有颜色项点击色块即弹出取色窗口，支持 RGB / HSV / HSL / HEX 四种格式互转。
 
 > 备注（V0.2 起）：4 种菜单样式 **全部对用户开放**，可在设置页「菜单样式」中切换
-> （圆环 / 八角星 / 蜘蛛网 / 八卦）。此前为稳定性曾强制回退为圆环，
+> （圆环 / Headshot / 蜘蛛网 / 八卦）。此前为稳定性曾强制回退为圆环，
 > 该限制已在 V0.2 解除。
+>
+> **默认样式 = Headshot**（V0.2 后续迭代起，此前为圆环）。
+>
+> **命名**：设置页上的样式项叫 `Headshot`（取自 CS 的爆头图标），早期文档写作「八角星」——
+> 同一个样式，造型仍是八角星；代码里对应 `MenuStyle.CSHeadshotOctagon`。
+> ⚠️ `MenuStyle` 枚举按**整数**写进 `config.json`
+> （`BasicRadial=0 / CSHeadshotOctagon=1 / SpiderWeb=2 / Bagua=3`），
+> 因此**只能改显示名或默认值，不能插入/调换枚举成员**，否则老配置的样式会错位。
+> 改默认值也只影响「新建配置 / 恢复默认」，已有配置里用户存的选择不会被改写。
 
 ### 1.2 技术栈
 - **编程语言**：C#
@@ -512,14 +521,14 @@ public enum XuanKongSiTriggerKey
 菜单窗口的轮询定时器已移除，窗口内 `MouseMove` 保留为兜底路径。
 
 ### 5.11 命中判定：方向优先，不设半径上限
-**问题**：四种样式原先都用「**内死区 + 外上限**」判定（八角星 `0.40R~1.02R`、
+**问题**：四种样式原先都用「**内死区 + 外上限**」判定（Headshot `0.40R~1.02R`、
 圆环 `InnerRadius~OuterRadius`、蛛网 `0.15R~1.1R`、八卦 `0.35R~1.1R`）。
 指针一旦越出外上限就返回 `null`，高亮随即消失 —— 手往外一甩就丢选，
 径向菜单该有的「往哪边甩就选哪边」手感不成立。
 
 **解决**：`RadialMenu.GetSelectedItem` 的契约改为**只按方向选**：
 指针在图形之内、之外、甚至屏幕另一角，都返回其方向对应的扇区；
-内侧死区一并取消（八角星圆心那块骷髅、八卦的太极图区域同样参与选择）。
+内侧死区一并取消（Headshot 圆心那块骷髅、八卦的太极图区域同样参与选择）。
 
 **唯一保留的例外**是圆心：那里方向无定义（`atan2(0,0)` 恒为 0°），返回 `null`。
 它必须挡住，有两个实打实的理由：
@@ -631,7 +640,7 @@ ShowWindowAsync(hwnd, SW_MINIMIZE);   // ✅ 不依赖前台
 
 **约定**：死区边界**不是统一的半径比例**，而是**各样式自己图形的内缘** ——
 圆环就是内圆之内、八卦就是太极范围、蜘蛛网就是中心第一个八边形、
-八角星就是底层同心圆的内圆之内。这样死区形状永远与画出来的图形严丝合缝，
+Headshot 的八角星星形就是底层同心圆的内圆之内。这样死区形状永远与画出来的图形严丝合缝，
 用户改设置里的「大小」时死区也跟着缩放。
 
 **实现**：内缘是各样式自己的几何，基类算不出来，所以新增一个由子类报告的属性：
@@ -646,7 +655,7 @@ public virtual double CenterDeadZoneRadius => 0.0;   // 返回 0 = 无死区
 | 样式 | 死区内缘 | 表达式 | 默认占半径 |
 |---|---|---|---|
 | 圆环 `BasicRadialMenu` | 内圆 | `OuterRadius − Thickness` | 0.56 |
-| 八角星 `CSHeadshotMenu` | 底层同心圆内圈的外缘 | `_scale × RingInnerHigh`（0.6590） | 0.637 |
+| Headshot `CSHeadshotMenu` | 底层同心圆内圈的外缘 | `_scale × RingInnerHigh`（0.6590） | 0.637 |
 | 蜘蛛网 `SpiderWebMenu` | 中心第一个八边形 | `_OuterRadius / (Rings + 1)` | 0.227 |
 | 八卦 `BaguaMenu` | 太极图 | `_OuterRadius × TAICHI_RADIUS_SCALE`（0.32） | 0.267 |
 
@@ -664,7 +673,7 @@ if (distance <= deadZone) return null;
 
 **两个必须注意的同源点**：
 
-1. **八角星用 `_scale` 而不是 `VisualRadius`** —— 同心圆是用 `_scale` 的矩阵画的，
+1. **Headshot 用 `_scale` 而不是 `VisualRadius`** —— 同心圆是用 `_scale` 的矩阵画的，
    而 `VisualRadius` 另乘了 `MaxRadius × EXTENT_MARGIN`（≈1.0346）。用错会让死区偏小 3.5%。
 2. **八卦的 `0.32` 提成常量 `TAICHI_RADIUS_SCALE`** —— 绘制（`DrawTaiChi`）与死区
    共用这一个来源，不会出现"死区与画出来的太极不一样大"。
@@ -680,7 +689,7 @@ if (distance <= deadZone) return null;
 - `CheckCustomSize` 里的死区判据**按样式分两类**：圆环验证「死区 == 外径 − 厚度」这个定义式，
   其余三种验证「归一化比例恒定」（防止有人把内缘写成写死的像素值）；
 - `CheckDirectionUnification` 的低档采样从写死的 `0.5` 改为 `CenterDeadZoneRadius × 1.05 / VisualRadius` ——
-  否则死区大的样式（圆环 0.56、八角星 0.637）会采到死区里，得到 `null` 而误报失败。
+  否则死区大的样式（圆环 0.56、Headshot 0.637）会采到死区里，得到 `null` 而误报失败。
 
 > ⚠️ 反过来说：这个改动**会让菜单的有效选择区显著缩小**。
 > 圆环默认死区占了半径的 56%，可操作区只剩最外那一环。
@@ -1085,7 +1094,7 @@ WPF 在**套用样式的那一刻**校验 `TargetType`，不匹配立即抛异�
 | 样式键 | TargetType | 用途 |
 |---|---|---|
 | `CheckGlyphTemplate` + `CheckStyle` | `CheckBox` | 开机启动 / 最小化到托盘 / 启用悬空寺 |
-| `RadioGlyphTemplate` + `RadioStyle` | `RadioButton` | 样式选择（圆环/八角星/蜘蛛网/八卦） |
+| `RadioGlyphTemplate` + `RadioStyle` | `RadioButton` | 样式选择（圆环/Headshot/蜘蛛网/八卦） |
 
 ⚠️ `ControlTemplate` **同样不能跨类型复用** —— `TargetType="CheckBox"` 的模板
 不能挂到 `RadioButton` 上。所以两处模板是**复制**而非引用。
@@ -1175,7 +1184,7 @@ box.Text = "#1A2B3C";  // 探针
 
 这条断言才是"绑定真的通了"的证据 —— 仅截图看不出绑定是否双向生效。
 
-> 注：八角星页没有配色行（只有尺寸滑动条），因此该页报
+> 注：Headshot 页没有配色行（只有尺寸滑动条），因此该页报
 > `WARN: 没有可见的色块按钮可测`，属**预期行为**而非缺陷。
 
 ### 5.22 输入框等宽化与悬空寺图片预览
@@ -1307,7 +1316,7 @@ private string ResolvePreviewImagePath() { ... }
 | 层面 | 问题 |
 |---|---|
 | 跨页 | 未选中的 TabItem 内容不在可视树上，`ActualHeight/Width` 为 0 |
-| 跨面板 | 菜单样式页里圆环/八角星/蜘蛛网/八卦是四组**互斥显示**的面板，未选中的那组控件是 `Collapsed`，尺寸同样为 0 |
+| 跨面板 | 菜单样式页里圆环/Headshot/蜘蛛网/八卦是四组**互斥显示**的面板，未选中的那组控件是 `Collapsed`，尺寸同样为 0 |
 | 定位 | 逻辑树会把所有页的内容都挂着，用"全局按名字查找"去判断页归属会**全部误判到第一页** |
 
 正确的三段式做法：
@@ -1388,9 +1397,11 @@ PASS: 宽度已自适应撑满容器（563 / 可用 563）
 ```powershell
 .\job-build.ps1                  # 构建 + 打开产物目录
 .\job-build.ps1 -Version V0.3    # 覆盖版本前缀（默认 V0.2）
+.\job-build.ps1 -NoClean         # 跳过 bin/obj 清理（快速增量构建）
 
 .\job-pack.ps1                   # 打包 + 打开产物目录
 .\job-pack.ps1 -NoZipFallback    # 找不到 ISCC 时直接失败（默认降级出免安装 zip）
+.\job-pack.ps1 -NoClean          # 同上，跳过清理
 ```
 
 两者都会在结束后把 `build/latest`（或 release 产物）定位并打开，
@@ -1402,13 +1413,13 @@ PASS: 宽度已自适应撑满容器（563 / 可用 563）
 
 ```powershell
 # build.ps1 —— 只构建，不打开目录
-# 参数：-Version（版本前缀，默认 V0.2）
+# 参数：-Version（版本前缀，默认 V0.2）、-NoClean
 # 输出：./build/<版本>/     （版本 = "V0.2-yyyyMMddHHmm"）
 dotnet build -c Release
 dotnet publish -c Release -r win-x64 --self-contained false -o ./build/$version
 
 # release.ps1 —— 构建 + Inno Setup 编译安装包
-# 参数：-Version（版本前缀）、-NoZipFallback
+# 参数：-Version（版本前缀）、-NoZipFallback、-NoClean
 # 输出：./release/WinLoop_<版本>.exe
 #       找不到 ISCC 时降级为 ./release/WinLoop_<版本>.zip
 ```
@@ -1416,9 +1427,28 @@ dotnet publish -c Release -r win-x64 --self-contained false -o ./build/$version
 > 注：`dotnet publish` 指定 `-r win-x64 --self-contained false`，
 > 产物为 framework-dependent 的 64 位版本，需要目标机器安装 .NET Core 3.1 Runtime。
 
-> **打包前务必先清 `WinLoop/bin` 与 `WinLoop/obj`**（`rm -rf`）。
-> 否则增量构建会把上一版残留的 dll 一起带进产物，导致体积异常膨胀
-> （曾出现 dll 涨到 34MB 的情况）。
+#### 构建前自动清 `bin`/`obj`（2026-09-20 起内置）
+
+`build.ps1` **默认会先删掉 `WinLoop/bin` 与 `WinLoop/obj`**，
+所以不再需要手工 `rm -rf`（这个清理曾经是外部步骤，每次都要人工执行 + 确认）。
+
+**为什么必须清**——不是洁癖，是防一个**静默错误**：
+
+- **症状**：dll 从 17MB 膨胀到 34MB（正好两倍），即两个字体被嵌了两遍。
+  编译 **0 报错**，只是产物悄悄变大。
+- **原因**：WPF 增量构建把「该嵌哪些资源」的清单缓存在 `obj\` 里。
+  一旦改动过资源清单（增删/改名 `<Resource>` 文件、调整通配符、换掉被嵌入的 ico），
+  **旧条目不会自动作废**，新的叠加上去 → 重复嵌入。
+- ⚠️ **`dotnet clean` 修不了这个**：它只删「当前项目评估认为它产出过」的文件，
+  而陈旧条目恰恰不在当前清单里。唯一可靠做法是直接删 `obj`（增量状态）与 `bin`（输出）。
+
+**实现要点**：删之前会先跑 `dotnet build-server shutdown` 停掉常驻的
+`VBCSCompiler` / MSBuild 节点 —— 它们持有 `obj` 下的句柄，不清掉会删失败。
+删除失败（最常见是 `WinLoop.exe` 还开着）时脚本**直接以退出码 1 终止**并提示先退出程序，
+不做静默降级 —— 半清理状态下构建出来的产物可能带陈旧资源，比直接失败更糟。
+
+代价是一次完整重编译（约 10~20 秒）。只有明确知道本次没动资源清单、
+想快速迭代时才用 `-NoClean` 跳过。
 
 ### 6.3 运行时自检开关
 
@@ -1486,7 +1516,7 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
 /// 生成脚本：tmp/ref/zf1_export.py
 ```
 
-这两个脚本是八角星图形的**矢量化来源** —— 源码里的路径数据是它们的**产物**。
+这两个脚本是 Headshot 图形的**矢量化来源** —— 源码里的路径数据是它们的**产物**。
 删掉就切断了"图是怎么来的"这条追溯链，以后想调容差重新生成将失去依据。
 
 而 `tmp/` 恰好在 `.gitignore` 里，**这份"再生图纸"不会进仓库**。
@@ -1515,6 +1545,12 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
 - ✅ 输入框统一等宽（宽度令牌收进 `InputStyle`）
 - ✅ 悬空寺图片面板：新增预览（宽度自适应、等比缩放），默认图也展示
 - ✅ 新增运行时自检：`--fontcheck` / `--settingscheck`
+- ✅ 程序图标 / 托盘图标重做：八角星主图（右上扇区金色高亮）+ 中蓝 `#0F6CBD` 圆角底，
+  多尺寸 ICO；图形占比按显示尺寸分档（桌面撑满 / 托盘 16px 留 2px 边框）
+- ✅ **默认菜单样式改为 Headshot**，设置页该项显示名由「八角星」改为 `Headshot`
+  （枚举顺序未动，老配置不受影响）
+- ✅ 构建脚本内置缓存清理：`build.ps1` 默认先清 `bin`/`obj`（`-NoClean` 可跳过）；
+  移除冗余的 `dotnet build` 与一段会覆盖托盘图标的 WGestures 遗留代码
 - ✅ 代码清理：移除 MainWindow、Core/* 及 MenuOverlayWindow.CalculateMenuPosition 等不可达代码
 
 ### V0.1 (2025-12 ~ 2026-01)

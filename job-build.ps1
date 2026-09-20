@@ -8,12 +8,18 @@
     用法：
         .\job-build.ps1                 构建 + 打开产物目录
         .\job-build.ps1 -Version V0.3   覆盖版本前缀（默认 V0.2）
+        .\job-build.ps1 -NoClean        跳过长 bin/obj 清理（快速增量构建）
 
     产物：.\build\<版本>\WinLoop.exe    稳定入口：.\build\latest\WinLoop.exe
+
+    注：默认会先清 WinLoop\bin 与 obj（原因见 build.ps1 文件头：
+        WPF 增量状态里的陈旧资源清单会导致重复嵌入、产物静默膨胀）。
+        所以**不需要再手工删缓存**。
 #>
 
 param(
-    [string]$Version = "V0.2"
+    [string]$Version = "V0.2",
+    [switch]$NoClean
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +45,7 @@ if (-not (Test-Path -LiteralPath $buildScript)) {
 
 # 打开动作由本脚本统一负责（保证走置顶工具）；build.ps1 自身不打开窗口
 $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $buildScript, '-Version', $Version)
+if ($NoClean) { $psArgs += '-NoClean' }
 & powershell @psArgs
 if ($LASTEXITCODE -ne 0) {
     Write-Host '构建失败，终止。' -ForegroundColor Red

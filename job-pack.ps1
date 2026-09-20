@@ -9,13 +9,19 @@
         .\job-pack.ps1                 打包 + 打开产物目录
         .\job-pack.ps1 -Version V0.3   覆盖版本前缀（默认 V0.2）
         .\job-pack.ps1 -NoZipFallback  找不到 ISCC 时直接失败（默认会降级出免安装 zip）
+        .\job-pack.ps1 -NoClean        跳过长 bin/obj 清理（快速增量构建）
 
     产物：.\release\WinLoop_<版本>.exe（找不到 Inno Setup 时降级为 .zip）
+
+    注：默认会先清 WinLoop\bin 与 obj（原因见 build.ps1 文件头：
+        WPF 增量状态里的陈旧资源清单会导致重复嵌入、产物静默膨胀）。
+        所以**不需要再手工删缓存**。
 #>
 
 param(
     [string]$Version = "V0.2",
-    [switch]$NoZipFallback
+    [switch]$NoZipFallback,
+    [switch]$NoClean
 )
 
 $ErrorActionPreference = 'Stop'
@@ -42,6 +48,7 @@ if (-not (Test-Path -LiteralPath $releaseScript)) {
 # 打开动作由本脚本统一负责（保证走置顶工具）；release.ps1 自身不打开窗口
 $psArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $releaseScript, '-Version', $Version)
 if ($NoZipFallback) { $psArgs += '-NoZipFallback' }
+if ($NoClean) { $psArgs += '-NoClean' }
 
 & powershell @psArgs
 if ($LASTEXITCODE -ne 0) {

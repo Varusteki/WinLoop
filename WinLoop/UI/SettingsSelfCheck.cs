@@ -166,6 +166,11 @@ namespace WinLoop.UI
             // 八卦 1 个，数量不同，布局都得站得住。
             CheckMenuStyleVariants(outDir, ref fail, W);
 
+            // ---- 4b) 样式选择 ↔ 参数面板联动 ----
+            // 改默认样式（AppConfig.MenuStyle 初始值）最容易踩「单选换了、面板没换」，
+            // 这一步取配置加载后、用户未做任何操作的状态，正是默认值生效的路径。
+            CheckMenuStylePanelSync(ref fail, W);
+
             // ---- 5) 输入框：全部等宽 + 行内不再有任何单位/提示文字 ----
             CheckInputUniformity(ref fail, W);
 
@@ -174,6 +179,95 @@ namespace WinLoop.UI
 
             W(fail == 0 ? "结果: ALL PASS" : ("结果: FAILED (" + fail + ")"));
             Flush(sb, outDir);
+        }
+
+        /// <summary>
+        /// 断言「被勾选的样式」与「显示出来的参数面板」严格一致。
+        ///
+        /// 四个参数面板（圆环尺寸 / Headshot 大小 / 蜘蛛网 / 八卦）互斥显示，
+        /// 界面里任何时候只能看到一组 —— 看错了组，用户会以为设置项丢了。
+        ///
+        /// **为什么单独立一条**：改默认菜单样式（<c>AppConfig.MenuStyle</c> 的初始值）
+        /// 最容易踩的就是这里 —— 单选按钮换了，参数面板却没跟着换。
+        /// 本断言取的是「配置加载完成、用户还没点任何东西」的状态，
+        /// 正好就是默认值生效的那条路径。
+        /// </summary>
+        private static void CheckMenuStylePanelSync(ref int fail, Action<string> W)
+        {
+            W("");
+            W("--- 样式选择与参数面板联动 ---");
+
+            SettingsWindow w = null;
+            try
+            {
+                w = new SettingsWindow();
+                w.WindowStartupLocation = WindowStartupLocation.Manual;
+                w.Left = -32000; w.Top = -32000;
+                w.ShowInTaskbar = false;
+                w.Show();
+                Pump();
+                w.UpdateLayout();
+                Pump();
+
+                // { 单选框名, 它对应的参数面板名 }
+                var pairs = new[]
+                {
+                    new[] { "BasicRadialRadio", "BasicRadialConfigGrid" },
+                    new[] { "CSHeadshotRadio",  "CSHeadshotConfigGrid" },
+                    new[] { "SpiderWebRadio",   "SpiderWebConfigGrid" },
+                    new[] { "BaguaRadio",       "BaguaConfigGrid" },
+                };
+
+                int checkedCount = 0;
+                string checkedName = null;
+                var bad = new System.Collections.Generic.List<string>();
+
+                foreach (var p in pairs)
+                {
+                    var rb = FindByName(w, p[0]) as System.Windows.Controls.RadioButton;
+                    var panel = FindByName(w, p[1]);
+                    if (rb == null || panel == null)
+                    {
+                        W("FAIL: 找不到控件 " + p[0] + " 或 " + p[1]);
+                        fail++;
+                        return;
+                    }
+
+                    bool isChecked = rb.IsChecked == true;
+                    bool panelVisible = panel.Visibility == Visibility.Visible;
+                    if (isChecked) { checkedCount++; checkedName = p[0]; }
+
+                    if (isChecked != panelVisible)
+                    {
+                        bad.Add(string.Format(CultureInfo.InvariantCulture,
+                            "{0}[勾选={1} 面板可见={2}]", p[0], isChecked, panelVisible));
+                    }
+                }
+
+                if (checkedCount != 1)
+                {
+                    W("FAIL: 应当恰好有一个样式被勾选，实际 " + checkedCount + " 个");
+                    fail++;
+                }
+                else if (bad.Count > 0)
+                {
+                    W("FAIL: 参数面板与勾选样式不一致 —— " + string.Join("、", bad.ToArray()));
+                    fail++;
+                }
+                else
+                {
+                    W("PASS: 参数面板与勾选样式一致（" + checkedName + "），四组互斥");
+                }
+            }
+            catch (Exception ex)
+            {
+                W("FAIL: 样式面板联动检查异常: " + ex.GetType().Name + ": " + ex.Message);
+                fail++;
+            }
+            finally
+            {
+                try { if (w != null) w.Close(); } catch { }
+            }
         }
 
         /// <summary>
@@ -835,10 +929,13 @@ namespace WinLoop.UI
             W("");
             W("--- 菜单样式变体 ---");
 
+            // 每项 = { 反射字段名, 界面上应显示的名称 }
+            // ⚠️ 第二列以 XAML 里 RadioButton 的 Content 为准。改了显示名必须同步这张表，
+            //    否则下面的「显示名」断言会立刻报出来（不会再悄悄生成名字对不上的截图）。
             var variants = new[]
             {
                 new[] { "BasicRadialRadio", "圆环" },
-                new[] { "CSHeadshotRadio", "八角星" },
+                new[] { "CSHeadshotRadio", "Headshot" },
                 new[] { "SpiderWebRadio", "蜘蛛网" },
                 new[] { "BaguaRadio", "八卦" },
             };
@@ -869,6 +966,21 @@ namespace WinLoop.UI
                     }
                     else if (field.GetValue(w2) is System.Windows.Controls.RadioButton rb)
                     {
+                        // 显示名断言：界面上的名称必须与清单一致。
+                        // 以前只把第二列当"截图文件名"用，改错了也没人发现；现在它是有约束的。
+                        string shown = rb.Content == null ? "" : rb.Content.ToString();
+                        if (shown == v[1])
+                        {
+                            W(string.Format(CultureInfo.InvariantCulture,
+                                "PASS: 样式项显示名为「{0}」", shown));
+                        }
+                        else
+                        {
+                            W(string.Format(CultureInfo.InvariantCulture,
+                                "FAIL: 样式项显示名不符（期望「{0}」，界面实际「{1}」）", v[1], shown));
+                            fail++;
+                        }
+
                         rb.IsChecked = true;
                         Pump();
                         w2.UpdateLayout();
