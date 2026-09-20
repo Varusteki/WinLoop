@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>IconGen</AssemblyName>
+    <RootNamespace>WinLoop.Tools.IconGen</RootNamespace>
+    <LangVersion>latest</LangVersion>
+    <NoWarn>NETSDK1138</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- ⚠️ 归档副本：路径比 Tools/IconGen/ 下的原件**多一级**（本文件位于
+         docs/archive/icon-source/，要上三级才是仓库根）。
+         这是归档副本与原件的唯一差异，改任何其它内容时记得两份同步。 -->
+    <ProjectReference Include="..\..\..\WinLoop\WinLoop.csproj" />
+  </ItemGroup>
+
+</Project>
