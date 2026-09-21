@@ -149,7 +149,7 @@ WinLoop/
 │   │   └── RadialMenuFactory.cs   # 按配置创建菜单实例
 │   ├── Models/
 │   │   ├── AppConfig.cs           # 配置数据结构
-│   │   └── SizingScale.cs         # 尺寸缩放（DPI 换算）
+│   │   └── SizingScale.cs         # 本屏 DPI 缩放比（仅供设置面板换算显示）
 │   ├── UI/
 │   │   ├── MenuOverlayWindow.xaml      # 菜单覆盖层
 │   │   ├── XuanKongSiOverlayWindow.xaml # 悬空寺覆盖层

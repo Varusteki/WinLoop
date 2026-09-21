@@ -565,7 +565,7 @@ namespace WinLoop.UI
                 int v;
                 bool parsed = int.TryParse(box.Text, out v);
 
-                // 本屏缩放：预览与运行时都按它换算成实际像素
+                // 本屏缩放比：仅用于把 DIP 讲成物理像素给人看（菜单尺寸本身不用它）
                 double scale = 1.0;
                 try
                 {
@@ -1144,10 +1144,8 @@ namespace WinLoop.UI
                 var center = new Point(w / 2, h / 2);
 
                 // 创建并初始化菜单，用于预览。
-                // 预览固定按 100% 缩放绘制（SizingScale = 1.0）：预览的职责是表达
-                // "我调大了一点"这种**相对**变化，跟着用户当前屏幕 DPI 走反而会让
-                // 同一数值在不同机器上显示不同大小，看不出自己改了什么。
-                _config.SizingScale = SizingScale.PreviewScale;
+                // 预览与运行时用**同一套 DIP 基准**（都用配置里的原始值）：
+                // 预览画的就是配置值本身，所以“预览里看到多大，弹出来就多大”。
                 _previewMenu = _menuFactory.CreateMenu(_config.MenuStyle, _config);
                 _previewMenu.Initialize(_config, center);
 
@@ -1463,8 +1461,7 @@ namespace WinLoop.UI
                 double h = OpPreviewCanvas.ActualHeight; if (h <= 0) h = 220;
                 var center = new Point(w / 2, h / 2);
                 
-                // 预览固定按 100% 缩放绘制，理由同 UpdatePreview。
-                _config.SizingScale = SizingScale.PreviewScale;
+                // 预览基准同 UpdatePreview（直接用配置里的 DIP）。
                 _opPreviewMenu = _menuFactory.CreateMenu(_config.MenuStyle, _config);
                 _opPreviewMenu.Initialize(_config, center);
                 

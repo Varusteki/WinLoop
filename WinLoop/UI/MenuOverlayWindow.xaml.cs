@@ -90,12 +90,13 @@ namespace WinLoop.UI
             _logicalCenter = new Point(logicalCenter.X - _logicalOrigin.X, logicalCenter.Y - _logicalOrigin.Y);
             App.Log($"Center: physical=({_centerPosition.X},{_centerPosition.Y}) logical=({logicalCenter.X},{logicalCenter.Y})");
 
-            // 尺寸自适应：配置里存的是「100% 缩放基准的逻辑像素」，
-            // 这里按本窗口所在显示器的 DPI 缩放换算成实际逻辑像素，否则
-            // 同一份配置在 200% 缩放的 4K 屏上只有 1080p 的四分之一大。
-            // 必须在 CreateMenu/Initialize 之前设好 —— 菜单在 Initialize 里读这个系数。
-            _config.SizingScale = SizingScale.FromVisual(this);
-            App.Log($"SizingScale (DPI/96, this monitor) = {_config.SizingScale}");
+            // 尺寸与 DPI 的关系：**这里不做任何换算**。
+            // app.manifest 声明了 Per-Monitor V2，WPF 渲染时会自动把 DIP 按本屏
+            // DPI 换算成物理像素，所以「配置里的半径」直接就是 DIP，物理尺寸恒定。
+            // （曾在这里把配置乘上 FromVisual(_config.SizingScale) = DPI/96，
+            //   属于双重缩放 —— 175% 缩放下菜单被撑大 1.75 倍。详见 RadialMenu.Scaled。）
+            // 下面只把本屏缩放比记进日志，纯粹用于诊断，不参与任何尺寸计算。
+            App.Log($"Monitor DPI scale (diagnostic only) = {SizingScale.FromVisual(this)}");
 
             // 创建菜单
             var factory = new RadialMenuFactory();

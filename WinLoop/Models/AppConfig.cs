@@ -13,17 +13,19 @@ namespace WinLoop.Models
         public int SizingUnitVersion { get; set; } = SizingUnitCurrent;
 
         /// <summary>
-        /// v1：尺寸字段是**固定像素**。菜单在任何缩放下都画这么大，
-        /// 于是在 200% 缩放的 4K 屏上看起来只有 1080p 的一半，占屏比例只剩 1/4。
+        /// v1（历史）：尺寸字段曾被视为**固定像素**。
         /// </summary>
         public const int SizingUnitV1 = 0;
 
         /// <summary>
-        /// v2（当前）：尺寸字段是**100% 缩放下的逻辑像素（DIP 基准）**。
-        /// 菜单弹出时乘以「本屏 DPI / 96」，因此在任何缩放比例下视觉大小恒定。
+        /// v2（当前）：尺寸字段就是 **DIP（设备无关像素）**。
         ///
-        /// 数值上与 v1 恰好同义（100% 缩放时 DPI/96 = 1，换算结果等于原值），
+        /// WPF 渲染时会自动按本屏 DPI 把它换算成物理像素，因此任何缩放比例下
+        /// 物理（视觉）大小恒定 —— 程序是 Per-Monitor V2 感知的，见 app.manifest。
+        ///
+        /// 数值上与 v1 同义（100% 缩放时 DIP = 物理像素），
         /// 所以从 v1 迁移到 v2 **不需要改动任何数值**，只是补一个标记。
+        /// 版本号保留下来只为识别老配置，不再影响任何尺寸计算。
         /// </summary>
         public const int SizingUnitCurrent = 2;
 
@@ -61,26 +63,13 @@ namespace WinLoop.Models
         // 悬空寺配置
         public XuanKongSiConfig XuanKongSi { get; set; } = new XuanKongSiConfig();
 
-        /// <summary>
-        /// **运行时**的尺寸缩放系数 = 本屏 DPI / 96（100% 缩放时 = 1.0）。
-        ///
-        /// 只影响本次弹出，**不落盘**：菜单弹出前由 MenuOverlayWindow 按当前显示器 DPI 设好，
-        /// 菜单 InitializeMenu 时用它把「100% 基准的逻辑像素」换算成「本屏实际逻辑像素」。
-        /// 设置面板的预览固定传 1.0（预览只表达相对大小，不该随用户当前屏幕变来变去）。
-        ///
-        /// 标 <see cref="System.Text.Json.Serialization.JsonIgnoreAttribute"/> 是必须的：
-        /// 它是运行时状态而非用户配置，写进 config.json 会在换屏后留下脏值。
-        /// </summary>
-        [System.Text.Json.Serialization.JsonIgnore]
-        public double SizingScale { get; set; } = 1.0;
-
         // (Removed accent color options — using explicit Wheel/Ring/Highlight colors)
     }
 
     public class BasicRadialMenuConfig
     {
-        // 以下尺寸字段单位 = 100% 缩放下的逻辑像素（DIP 基准），见 AppConfig.SizingUnitCurrent。
-        // 菜单渲染时统一乘以 AppConfig.SizingScale（本屏 DPI/96）。
+        // 以下尺寸字段单位 = **DIP（设备无关像素）**，见 AppConfig.SizingUnitCurrent。
+        // WPF 渲染时自动按本屏 DPI 换算成物理像素 —— 这里不需要、也不得再乘任何 DPI 系数。
         public double OuterRadius { get; set; } = 50;
         // Match Loop defaults: radius 50, thickness 22 => inner = 50 - 22 = 28
         public double InnerRadius { get; set; } = 28;

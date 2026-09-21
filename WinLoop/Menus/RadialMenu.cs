@@ -102,22 +102,36 @@ namespace WinLoop.Menus
         }
 
         /// <summary>
-        /// 把配置里的**基准尺寸**（100% 缩放下的逻辑像素）换算成**本屏实际逻辑像素**。
+        /// 尺寸入口：把配置里的**基准尺寸**换算成菜单绘制用的逻辑像素（DIP）。
         ///
-        /// 子类读任何半径/粗细都必须经过这里，不许直接写
-        /// <c>Config.XxxMenuConfig.OuterRadius</c> —— 那样在 125%/150%/200% 缩放下
-        /// 菜单会画得比用户设定的小，而且在 4K 上小得离谱。
+        /// **现在它是恒等函数** —— 配置值本身就以 DIP 为单位，直接使用即可。
+        /// 之所以保留这一层，是因为它是「配置 → 绘制」的**唯一入口**：
+        /// 各样式读任何半径 / 粗细都必须经过这里（不许直接写
+        /// <c>Config.XxxMenuConfig.OuterRadius</c>），将来若要引入真正的整体缩放，
+        /// 只改这一处就够。
         ///
-        /// 缩放系数来自 <see cref="AppConfig.SizingScale"/>，由 MenuOverlayWindow
-        /// 在弹出前按当前显示器 DPI 设定；设置面板的预览固定传 1.0。
+        /// ============ 为什么不再乘「本屏 DPI / 96」 ============
+        ///
+        /// 曾有一版把配置值乘以「本屏 DPI / 96」，注释给的理由是
+        /// “否则 200% 缩放的 4K 屏上菜单只有 1080p 的四分之一大”。
+        /// **那个推理把 DIP 误当成了物理像素。**
+        ///
+        /// 本程序在 app.manifest 里声明了 Per-Monitor V2 DPI 感知，WPF 渲染时
+        /// **已经自动把 DIP 按本屏 DPI 换算成物理像素**：
+        ///     物理像素 = DIP × (本屏 DPI / 96)
+        /// 因此「半径 90」在任何缩放比例下的**物理尺寸恒为 90/96 英寸**，
+        /// 本来就恒定。再乘一次 DPI/96 就是**双重缩放**：
+        ///     物理像素 = 90 × (DPI/96) × (DPI/96)
+        /// 结果是 175% 缩放下菜单被撑到 1.75 倍，肉眼可见地“特别大”。
+        ///
+        /// 去掉这层多余换算后，物理尺寸只由配置值决定，与 DPI、分辨率都无关，
+        /// 也与设置面板预览（同样以 DIP 基准绘制）的观感一致。
         /// </summary>
-        /// <param name="baseValue">配置里的基准值（100% 缩放下的逻辑像素）。</param>
+        /// <param name="baseValue">配置里的基准值（单位即 DIP）。</param>
         protected double Scaled(double baseValue)
         {
             if (double.IsNaN(baseValue) || double.IsInfinity(baseValue)) return 0;
-            double s = Config?.SizingScale ?? 1.0;
-            if (double.IsNaN(s) || double.IsInfinity(s) || s <= 0) s = 1.0;
-            return baseValue * s;
+            return baseValue;
         }
         
         protected abstract void InitializeMenu();
