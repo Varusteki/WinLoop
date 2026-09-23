@@ -25,6 +25,7 @@
 > 早期文档里叫「八角星」—— 指同一个样式，造型仍是八角星。
 
 ### 🪟 丰富的窗口操作
+共 16 种动作：
 - **基础操作**：最小化、最大化、显示桌面 (Win+D)
 - **窗口状态**：最大化/还原切换、窗口置顶切换、关闭窗口
 - **半屏分屏**：左/右/上/下 半屏
@@ -42,18 +43,20 @@
 ### 🏯 悬空寺（XuanKongSi）覆盖层
 - **双击触发键显示**：支持三组触发键：左右 Alt / 左右 Shift / 左右 Ctrl
 - **按 ESC 收起**：不会因为点击覆盖层而收起
-- **展示内容可配置**：图片 或 文字（支持 Markdown）
+- **展示内容可配置**：图片 / 文字（支持 Markdown）/ 网页（URL）
 - **图片预览**：设置页可直接看到当前生效的图片，宽度跟随窗口自适应；
   未选图时展示随包分发的默认键位图
 
 ## 🚀 快速开始
 
 ### 安装
-1. 下载最新安装包（`release/WinLoop_V0.2-YYYYMMDDHHMMSS.exe`）
+1. 下载最新安装包（`release/WinLoop_V0.2-YYYYMMDDHHMM.exe`）
 2. 安装并运行 `WinLoop`
 3. 程序将在系统托盘运行
 
-（可选）如果你需要免安装版本，可使用 `build/V0.2-YYYYMMDDHHMMSS/` 目录下的发布产物。
+（可选）如果你需要免安装版本，可使用 `build/V0.2-YYYYMMDDHHMM/` 目录下的发布产物。
+
+> 时间戳精度为**分钟**（`yyyyMMddHHmm`）——同一分钟内重复构建会复用同一目录。
 
 ### 基本使用
 1. **显示菜单**：按住鼠标中键约 0.2 秒
@@ -102,11 +105,12 @@ dotnet build WinLoop\WinLoop.csproj -c Debug
 
 # 正式构建（产出可双击运行的 exe + 自动打开产物目录）
 .\job-build.ps1
-# 输出: ./build/V0.2-{日期时间}/
+# 输出: ./build/V0.2-{yyyyMMddHHmm}/
 
 # 打包安装程序（需要 Inno Setup；找不到时降级出免安装 zip）
 .\job-pack.ps1
-# 输出: ./release/WinLoop_V0.2-{日期时间}.exe
+# 输出: ./release/WinLoop_V0.2-{yyyyMMddHHmm}.exe
+#       找不到 ISCC 时降级为 ./release/WinLoop_V0.2-{yyyyMMddHHmm}_portable.zip
 ```
 
 > ⚠️ **打包前先清 `WinLoop\bin` 和 `WinLoop\obj`**，否则增量构建会把上一版
@@ -133,13 +137,15 @@ dotnet build WinLoop\WinLoop.csproj -c Debug
 ### 项目结构
 ```
 WinLoop/
+├── WinLoop.sln                    # 解决方案文件
 ├── WinLoop/                        # 主项目
 │   ├── App.xaml.cs                # 应用入口、系统托盘、自检开关分发
+│   ├── AssemblyInfo.cs            # 程序集元数据
 │   ├── app.manifest               # Per-Monitor V2 DPI 感知声明
 │   ├── Config/
 │   │   └── ConfigManager.cs       # JSON 配置读写
 │   ├── Menus/                     # 菜单样式实现
-│   │   ├── RadialMenu.cs          # 菜单基类
+│   │   ├── RadialMenu.cs          # 菜单基类（含 DrawnRadius 契约）
 │   │   ├── BasicRadialMenu.cs     # 圆环
 │   │   ├── CSHeadshotMenu.cs      # Headshot（八角星造型）
 │   │   ├── CSHeadshotLayers.cs    # Headshot 图层数据
@@ -152,15 +158,16 @@ WinLoop/
 │   │   └── SizingScale.cs         # 本屏 DPI 缩放比（仅供设置面板换算显示）
 │   ├── UI/
 │   │   ├── MenuOverlayWindow.xaml      # 菜单覆盖层
+│   │   ├── MenuPreviewWindow.xaml      # 菜单样式预览窗（贴在主窗口界外的衍生窗）
 │   │   ├── XuanKongSiOverlayWindow.xaml # 悬空寺覆盖层
-│   │   ├── SettingsWindow.xaml         # 设置窗口
+│   │   ├── SettingsWindow.xaml         # 设置窗口（左导航 4 页）
 │   │   ├── ColorPickerWindow.xaml      # 颜色选择器
 │   │   ├── FontSelfCheck.cs            # --fontcheck 实现
 │   │   └── SettingsSelfCheck.cs        # --settingscheck 实现
 │   ├── SystemIntegration/         # 系统集成
 │   │   ├── MouseHookService.cs         # 全局鼠标钩子
 │   │   ├── KeyboardHookService.cs      # 全局键盘钩子（悬空寺双击检测）
-│   │   ├── WindowManagementService.cs  # 窗口操作
+│   │   ├── WindowManagementService.cs  # 窗口操作（含 DWM 可见外框查询）
 │   │   └── AutoStartManager.cs         # 开机自启
 │   └── Resources/
 │       ├── Fonts/                 # 内嵌字体（Noto Sans SC Regular/Medium）
@@ -173,6 +180,7 @@ WinLoop/
 │   ├── ConfigTester/              # 配置读写测试
 │   ├── ShowSettings/              # 单独打开设置窗口
 │   ├── MenuShot/ MenuProbe/       # 菜单截图与探针
+│   ├── IconGen/                   # 图标生成（已归档到 docs/archive/icon-source）
 │   └── ExplorerFocus/             # 把资源管理器窗口拉到最前
 ├── job-build.ps1 / job-pack.ps1   # 作业脚本（构建/打包 + 打开目录）
 ├── build.ps1 / release.ps1        # 底层构建/打包脚本
@@ -181,6 +189,10 @@ WinLoop/
 ├── release/                       # 安装包输出
 └── probe-out/                     # 临时探针输出（可删）
 ```
+
+> 设置窗口共 4 页（左侧纵向导航）：**菜单样式 / 操作配置 / 悬空寺 / 杂项设置**。
+> 「菜单样式」页的效果预览由 `MenuPreviewWindow` 承担 —— 它贴在主窗口右侧界外，
+> 紧贴可见边缘、不抢焦点。
 
 ## 📚 文档
 
@@ -198,7 +210,7 @@ WinLoop/
 - [x] 设置窗口（菜单样式、操作配置、杂项设置）
 - [x] Loop 风格环形菜单（白色轮廓 + 蓝色高亮）
 - [x] 全局鼠标钩子（中键按下/释放检测）
-- [x] 窗口管理操作（13 种操作）
+- [x] 窗口管理操作（13 种操作，V0.2 扩充至 16 种）
 - [x] 系统托盘集成（双击/右键菜单）
 - [x] 开机自启动（注册表方式）
 - [x] 配置持久化（JSON 格式）

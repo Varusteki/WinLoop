@@ -45,9 +45,11 @@ WinLoop 是一款适用于 Windows 平台的快捷窗口管理工具，核心包
 │    系统集成层    │     UI 层       │           核心层               │
 ├─────────────────┼─────────────────┼─────────────────────────────────┤
 │ MouseHookService│ MenuOverlayWindow│ ConfigManager                  │
-│ KeyboardHookSvc │ SettingsWindow   │ AppConfig                      │
-│ WindowManagement│ XuanKongSiOverlay │ RadialMenuFactory              │
-│ AutoStartManager│ (WPF Window)     │ (Menu Styles)                  │
+│ KeyboardHookSvc │ SettingsWindow   │ AppConfig / SizingScale        │
+│ WindowManagement│ MenuPreviewWindow│ RadialMenuFactory              │
+│ AutoStartManager│ XuanKongSiOverlay│ (Menu Styles)                  │
+│                 │ ColorPickerWindow│                                │
+│                 │ 自检类（Font/SettingsSelfCheck）                    │
 └─────────────────┴─────────────────┴─────────────────────────────────┘
 ```
 
@@ -55,16 +57,20 @@ WinLoop 是一款适用于 Windows 平台的快捷窗口管理工具，核心包
 
 | 模块 | 主要职责 | 核心类/文件 |
 |------|----------|-------------|
-| 应用入口 | 初始化服务、事件分发、系统托盘 | App.xaml.cs |
+| 应用入口 | 初始化服务、事件分发、系统托盘、自检开关分发 | App.xaml.cs |
 | 鼠标钩子 | 全局鼠标事件监控、触发延时 | MouseHookService.cs |
 | 键盘钩子 | 全局键盘事件监控、双击触发、ESC 收起 | KeyboardHookService.cs |
-| 窗口管理 | 执行窗口操作（分屏、最大化等） | WindowManagementService.cs |
+| 窗口管理 | 执行窗口操作（分屏、最大化等）、DWM 可见外框查询 | WindowManagementService.cs |
 | 菜单覆盖 | 显示菜单、鼠标跟踪、执行选中 | MenuOverlayWindow.xaml.cs |
-| 菜单样式 | 绘制不同风格的菜单与高亮 | BasicRadialMenu.cs 等 |
-| 悬空寺覆盖层 | 显示提示卡片、动画、内容渲染（文字/图片） | XuanKongSiOverlayWindow.xaml(.cs) |
-| 设置窗口 | 配置界面、实时预览 | SettingsWindow.xaml.cs |
+| 菜单样式 | 绘制不同风格的菜单与高亮；报告绘制半径与中心死区 | RadialMenu.cs + BasicRadialMenu / CSHeadshotMenu / SpiderWebMenu / BaguaMenu |
+| 菜单样式预览 | 菜单样式页的效果预览（贴在主窗口界外的衍生窗） | MenuPreviewWindow.xaml(.cs) |
+| 悬空寺覆盖层 | 显示提示卡片、动画、内容渲染（文字/图片/网页） | XuanKongSiOverlayWindow.xaml(.cs) |
+| 设置窗口 | 配置界面（左导航 4 页）、实时预览、操作配置引线 | SettingsWindow.xaml(.cs) |
+| 颜色选择器 | 直接取色的独立窗口（RGB/HSV/HSL/HEX 互转） | ColorPickerWindow.xaml(.cs) |
 | 配置管理 | JSON 配置读写（含兼容旧配置字段） | ConfigManager.cs |
+| 尺寸换算 | 本屏 DPI 缩放比（仅供设置面板换算显示） | SizingScale.cs |
 | 开机自启 | 注册表自启动管理 | AutoStartManager.cs |
+| 运行时自检 | 字体自检 / 设置窗口离屏几何自检 | FontSelfCheck.cs / SettingsSelfCheck.cs |
 
 ## 3. 核心模块实现
 
@@ -226,11 +232,37 @@ public class BasicRadialMenu : RadialMenu
 }
 ```
 
+#### 半径契约：`VisualRadius` vs `DrawnRadius`
+
+菜单基类 `RadialMenu` 暴露**两个不同的半径**，用途严格区分：
+
+| 属性 | 含义 | 用途 |
+|---|---|---|
+| `VisualRadius` | 元素半尺寸，**含各样式自己的绘制外扩系数** | 定位、命中判定（占位宁可大一点） |
+| `DrawnRadius` | 图形**实际画到**的最外半径（"看得见的边"），不含留白 | **凡是需要贴住图形边缘的场合** |
+
+`DrawnRadius` 默认等于 `VisualRadius`（圆环即如此：外圆半径就是元素半径，没有留白），
+四个样式各自重写：
+
+| 样式 | `VisualRadius` 的外扩 | `DrawnRadius` 取值 |
+|---|---|---|
+| 圆环 `BasicRadialMenu` | 无（1.0） | `VisualRadius`（默认，不重写） |
+| Headshot `CSHeadshotMenu` | ×1.02（`EXTENT_MARGIN`） | `_scale × CSHeadshotPathData.MaxRadius` |
+| 蜘蛛网 `SpiderWebMenu` | ×1.1 | `_outerRadius` |
+| 八卦 `BaguaMenu` | ×1.2 | `_outerRadius × 0.95`（最外圈八边形） |
+
+**为什么需要这个区分**：「操作配置」页要把引线锚点围着菜单图形摆一圈。
+若用 `VisualRadius` 定位，锚点会浮在留白里 —— 而且各样式留白比例不同
+（1.0 / 1.02 / 1.1 / 1.2），浮出的距离还各不相同，八条线看着就不齐。
+
+⚠️ **改各样式绘制半径时必须同步改 `DrawnRadius`**：它算错**不会报错、图形也照常显示**，
+只会让贴着它的东西（引线锚点、将来的标注）静悄悄地飘在留白里。
+
 ### 3.4 窗口管理服务 (WindowManagementService)
 
 #### 功能描述
 - 封装 Windows API 实现窗口操作
-- 支持 13 种窗口操作
+- 支持 16 种窗口操作
 - 显示桌面通过模拟 Win+D 快捷键实现
 
 #### 支持的操作
@@ -274,6 +306,39 @@ public class WindowManagementService
     }
 }
 ```
+
+#### 可见外框查询：`TryGetVisibleFrameBounds`
+
+**问题**：Win10/11 会给带标题栏的窗口在左 / 右 / 下留约 **8px 的不可见阴影边框**
+（拖拽热区），而 WPF 报出的 `Window.Left/Top/Width/Height` 是**含它的外层矩形**。
+于是"把 B 窗左边贴到 A 窗 `Left + ActualWidth`"算出来的位置，视觉上会凭空多出
+一条 **8~9px 的缝** —— 用户看到的就是"两个窗口没贴在一起"。
+
+**解法**：向 DWM 要扩展边框，拿到真正的"看得见的边"：
+
+```csharp
+public static bool TryGetVisibleFrameBounds(IntPtr hwnd, out Rect boundsPx)
+{
+    boundsPx = Rect.Empty;
+    if (hwnd == IntPtr.Zero) return false;
+
+    RECT frameRect;
+    int hr = DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+        out frameRect, Marshal.SizeOf(typeof(RECT)));
+    if (hr != 0) return false;   // DWM 被关闭 / 句柄无效 → 调用方自行降级
+
+    boundsPx = new Rect(frameRect.Left, frameRect.Top,
+        frameRect.Right - frameRect.Left,
+        frameRect.Bottom - frameRect.Top);
+    return boundsPx.Width > 0 && boundsPx.Height > 0;
+}
+```
+
+⚠️ 返回的是**物理像素**。本项目窗口是 Per-Monitor V2，若要用于 `Window.Left/Top`（DIP），
+需除以该屏的 DPI 缩放系数。
+
+**使用场景**：`MenuPreviewWindow`（菜单样式预览窗）以主窗口的可见外框为基准定位 ——
+紧贴可见右缘（间距 0）、高度与可见高齐平。用 `Left + ActualWidth` 会永远留 7~9px 缝。
 
 ### 3.5 应用入口 (App.xaml.cs)
 
@@ -766,7 +831,17 @@ WPF 按本屏 DPI 自动换算成物理像素，换机器 / 改缩放都是同�
 `Window.Left/Top/Width/Height`，跨不同缩放的显示器时菜单中心会偏。
 单屏（含单屏 4K）不受影响。
 
+> **衍生窗的情况**：`MenuPreviewWindow` 的定位另走一路 ——
+> 它用 `TryGetVisibleFrameBounds`（DWM 物理像素）+ 按主窗口所在**显示器**的
+> 工作区/DPI 换算（`GetWorkAreaDip`），因此**单屏正确**；
+> 跨混合缩放屏时与主窗口一起迁移的行为仍属已知局限（与上面同源）。
+
 ### 5.16 设置界面：行流结构（参照 PixPin）
+
+> **时效说明**：本节记录的是**行流版式的设计思路与当时的令牌取值**。
+> 后续已演进：令牌终值见 5.19（`RowLine #EDEDED` / `FormRowH = 32` /
+> `FormLabelCol = 108` / 正文字号 14）；导航结构见 5.23（顶部标签 → 左侧纵向导航）。
+> 本节表格里的 104、26 等数字是**迭代中间态**，不是当前值。
 
 **问题**：设置界面原先是"每块内容一张小卡片"，每页 2–5 张卡各自为战：
 行高不统一（26 与 auto 混用）、无行间分割线、单卡撑不满时右侧与底部大片留白、
@@ -816,9 +891,14 @@ WPF 按本屏 DPI 自动换算成物理像素，换机器 / 改缩放都是同�
 
 ### 5.17 预览自动适配与尺寸实时反馈（B 档）
 
-**问题 1｜预览被裁切**：预览画布固定 280×280，而半径输入框没有上限。
-半径超过约 130 逻辑像素后，菜单图形会超出画布被切掉 ——
+**问题 1｜预览被裁切**：预览画布尺寸固定，而半径输入框没有上限。
+半径超过经验上限（约 130 逻辑像素）后，菜单图形会超出画布被切掉 ——
 用户看不到完整轮廓，也就失去了"预览"的意义。
+
+> 画布尺寸演进：原为设置页内的 280×280；预览迁到衍生窗 `MenuPreviewWindow` 后
+> 改为 **300×300**（`MenuPreviewWindow.xaml`）。
+> ⚠️ 输入框的 `MaxRecommended`（半径类 130 / 内半径 120）**有意保持不变** ——
+> 画布放大后理论上限本可放宽，但保持原值可避免"同样的配置在新旧版本提示不一致"。
 
 **做法**：`ApplyPreviewFit()` 按「能完整容纳」的比例整体缩放渲染，规则：
 
@@ -854,7 +934,7 @@ _previewMenu.RenderTransformOrigin = new Point(0.5, 0.5);   // 围绕中心缩�
 ```
 
 **问题 3｜越界无提示**：`MaxRecommended` 是"预览画布能完整容纳"的经验上限
-（半径类 130，内半径 120，见画布 280 的一半）。超出时**只把输入框描边染成
+（半径类 130，内半径 120；按当时的 280 画布取一半）。超出时**只把输入框描边染成
 橙色 `#FFD08A3A` 并追加警告文案，不阻止输入** —— 高级用户可能确实想要大半径，
 我们不能替他做决定。这属于"软提醒"。
 
@@ -1033,7 +1113,7 @@ Bold 不带 —— 界面里没有任何 `FontWeight="Bold"` 引用，省 8.5MB�
 —— 这条路的基准偏移不在 URI 里，而在宿主进程上。
 
 结论：**内嵌字体的验证只能在真实入口（WinLoop.exe）里做**。
-为此在 App 增加了 `--fontcheck` 开关（见 5.19 末），
+为此在 App 增加了 `--fontcheck` 开关（用法见 6.3「运行时自检开关」），
 把自检挂在真实入口上。这也是本轮唯一可信的验证手段 ——
 用外部程序测出来的全是假阴性。
 
@@ -1394,6 +1474,151 @@ PASS: 宽度已自适应撑满容器（563 / 可用 563）
 > 新增输入框时要把它加进去，否则该输入框不参与等宽断言。
 > 漏加只会让覆盖变少、不会误报，属于"安全的失败方向"。
 
+### 5.23 设置窗口：左侧纵向导航与 4 页结构
+
+导航由**顶部横向标签**改为**左侧纵向导航**（150→168 宽，窄栏 + 实心块选中态），
+共 4 页：
+
+| 页 | 内容 |
+|---|---|
+| 菜单样式 | 四种样式的参数（尺寸、配色），效果预览由衍生窗承担（见 5.24） |
+| 操作配置 | 八选区的动作下拉框 + 菜单画布 + 引线（见 5.25） |
+| 悬空寺 | 启用开关、触发键、内容类型（图片 / 文字 / 网页） |
+| 杂项设置 | 开机自启、最小化到托盘、触发时长 |
+
+导航选中态 = **整块实心蓝（`NavActiveBg #0F6CBD`）+ 白字**。
+
+### 5.24 菜单样式预览：衍生窗口 (MenuPreviewWindow)
+
+效果预览从设置页内容区**移出**，改为贴在主窗口**界外**的独立窗口：
+
+- **定位基准** = 主窗口的 **DWM 可见外框**（见 3.4 `TryGetVisibleFrameBounds`）：
+  紧贴可见右缘（间距 0）、高度 = 可见高（上下齐平）；不用 `Left + ActualWidth`
+  （含约 7px 隐形边框，永远留 7~9px 缝 —— 此坑连踩两次）。
+- **无标题行**、只圆外侧两角（`CornerRadius="0,8,8,0"`），
+  需要三件套：`AllowsTransparency=True` + `WindowStyle=None` + `Background=Transparent`。
+  代价是失去 ClearType（`TextRenderingMode` 已改 `Grayscale`）。
+- **不抢焦点**：`ShowActivated="False"`（有交互控件后不能再用窗口级 `Focusable="False"` 兜底）。
+- Owner 必须在 `Show` **之前**设置。
+- 底色支持白 / 黑（黑用纯 `#000000`）切换；该状态放静态字段，**不进 AppConfig**。
+
+### 5.25 「操作配置」页：引线（Callout Connector）布局
+
+设置窗口第 2 页，是本项目最复杂的一处自定义布局。
+
+#### 页面结构
+
+三栏：**150 | 菜单画布 252×252 | 150**。左右两列为八个选区的动作配置行，
+每行一个动作下拉框，**8 个行同时可见**；中间画布渲染当前菜单样式。
+
+行与扇区的对应关系**只由引线表达** —— 行内不写「位置N · 方位」小字、
+页内无大标题、无底部提示（2026-09-22 用户要求删除）。
+
+#### 终点契约（最高优先级）
+
+**起点必须落在下拉框的「侧边中点」**：
+
+```
+起点 x = 下拉框朝内边缘 ∓ OpEdgeGap(2)
+起点 y = 下拉框的纵向中点
+```
+
+**不许沿边滑动**。曾用"起点沿边滑动"把段数从 24 降到 12，但起点会滑到框的上下角上、
+看着不属于任何一行，被否决。**段数是结果不是目标**：契约在 → 三段是几何必然。
+
+⚠️ 横向 / 纵向都量**下拉框**（`_opCombos[i]`），**不量行 Border** ——
+行 Border 带内边距，量它会让线头悬空。
+
+#### 引线形态
+
+- **1 段水平直线**（锚点与起点同高时退化）或 **3 段「横→竖→横」**；
+- `StrokeLineJoin=Miter`（用户明确不要圆角）；
+- ⚠️ **段序只许横→竖→横、首末段必水平**：反成竖→横 → 水平引出段消失、
+  竖段贴着下拉框边像描边；反成横→竖 → 竖段落在锚点 x 上、切进图案。
+- 各位置段数 `1 3 3 3 1 3 3 3`（位置1 / 位置5 是 1 段直线），共 **20 段**。
+- ⚠️ 退化门限 `BuildOpConnectorGeometry` 取 **1.0px**（不是 0.5）：
+  四样式 anchorR 是 99.0~99.4，0.5 只剩 0.1px 余量，一次取整就多出 0.4px 竖段
+  → 形态从"1 段"变"3 段"。
+
+#### 锚点环与走廊
+
+- `anchorR = DrawnRadius × _opFit + OpAnchorGap(6)`
+  ⚠️ 用 **`DrawnRadius`**（见 3.3），不能用 `VisualRadius` —— 后者含各样式外扩
+  （蜘蛛网 1.1 / 八卦 1.2 / 八角星 1.02），浮空距离各不相同。
+- **锚点环四样式统一 `OpAnchorRingVisibleR = 93`**（→ anchorR 99）：
+  行 y 等距、锚点 y 按正弦分布（`0、±70、±99`），
+  只有垂直跨度相当才能对齐。不统一时 anchorR 飘 99~124 → 圆环乱（49 段 / 最长竖段 45.7px）。
+- 上限由**八卦的画布**卡住（252−16 → 半宽 ≤118；八卦 `VisualRadius` 108×1.2 → 可见 ≤93.4）。
+  代价：圆环 / Headshot / 蜘蛛网从 118 / 115.7 / 107.3 收到 93（菜单变小）。
+- **竖直走廊**：`OpCorridorLead = 30`，走廊 x = 菜单中心 ± (anchorR + 30) = ±129，
+  **由锚点环推导**（不写死，窗口变窄自动往里）。同列竖段共线（连成断续一条线，是有意的）。
+
+#### 行布局：行距 10 + 两列反向平移
+
+行高 **50** = 边框 2 + 上下内边距 2×2 + **下拉框 44**（`OpComboStyle`，
+刻意高于全局 `FormRowH(32)`）；行距 **10**。
+
+⚠️ **行距不是手感**：它定行心间距 `p = 60`，而"锚点落在竖直轴上"的位置1 / 位置5
+要行心 = ±anchorR(99) → 差值由**两列各自的整列平移**补：
+
+```
+t = anchorR − 1.5p = 99 − 90 = 9
+```
+
+- 右列 `Margin="0,0,0,8"`（**上移 9px**）
+- 左列 `Margin="0,18,0,-10"`（**下移 9px**）
+- 两个 Margin 都含"抵消末尾行距"的项（−10）；改行距就要两个都重算。
+
+⚠️ 用户口中的「**左下**」= 左列最下 = 位置5、「**右上**」= 右列最上 = 位置1 ——
+说的是**屏幕位置**，不是方位名。
+
+⚠️ **行组外沿与行距、平移量都无关**（最外行心恒为 ±99）→ 外沿 ±124 ≤ 画布半高 126，
+恒留 2px。所以平移几乎不消耗画布空间 —— 这正是它优于"拉大行距"的根本原因。
+
+#### 菜单尺寸
+
+用满空间、**无固定系数**（`OpMenuDisplayScale = 0.72` 已删）。上限取小：
+
+1. `ComputeOpFitCap(rowInnerDist, drawnR)` —— 锚点环不越行内边缘，不夹 1.0；
+2. `OpAnchorRingVisibleR / drawnR` —— 常更紧。
+
+操作配置页传 `allowUpscale: true`（此页菜单是示意图）。
+
+⚠️ 缩放必须在 `UpdateOpConnectors` 里定（那一刻才有 8 行 `ActualWidth`），
+不能在 `UpdateOpPreview`（行宽还是 0）。
+
+#### 焦点联动
+
+8 个 ComboBox 统一挂 `GotFocus` + `DropDownOpened` → 读 `Tag` →
+改唯一真相 `_selectedSectorIndex` 并统一刷新三处（行高亮 / 引线加粗 / 锚点放大）。
+
+**失焦刻意不清空**（下拉 Popup 抢焦点会抹掉高亮）。
+
+#### 自检断言（`--settingscheck`）
+
+本项目独有的量：
+
+- 锚点间隙 `OpAnchorGap ±1.5`；
+- `fit` 被 `Min(画布, 行内边缘, 统一锚点环)` 夹住，且 **`RenderTransform.ScaleX == fit`**
+  （⚠️ 只断言内部字段会漏掉"字段对了但没生效"，断言必须落在**实际生效的属性**上）；
+- 行组中心 == 菜单中心（±1px）；
+- ⑤f：同列相邻行可见间隙一致 ±0.5 + 位置1/位置5 台阶 ≤1px +
+  **两列偏移方向正确**（= "行距 10 + 两列 Margin 8/18"的守卫）；
+- 起点 == **下拉框侧边中点**（x 贴框朝内边缘 ∓`OpEdgeGap`、y = 框纵向中点 ±0.6）；
+- 走廊 == 菜单中心 ±(`anchorR + OpCorridorLead`)；
+- 卡片高 == 视口高；
+- 页内无标题文案（限定该页内容扫描，左侧导航同名项不算）。
+
+通用项（方向角 ±3°、8 线两两不重叠（**逐段收集**，每条线有两段水平段）、
+形态字符串只许 `"H"` / `"HVH"`、参照系用 `OpLayoutGrid`、断言前多泵一轮消息循环）。
+
+> **演进史（别把前几轮拿回来）**：
+> ① 斜线直达（发散、正上正下甩上百 px）→ ② 三段正交肘线（方向齐了但最长竖段 63px）
+> → ③ 起点滑动 + 统一锚点环（24→12 段，但起点掉到框角）→ ④ 起点按下拉框量 + 框加高到 44
+> → ⑤ 起点钉回**框侧边中点** + 走廊回归（24 段，用户红线定版）
+> → ⑥ 对称布局 + 行距 60→66（位置1/位置5 变直线，但行组顶满画布）
+> → ⑦ **本版**：行距回到 10，两列各自整列平移 ±9（同样 20 段 / 两条直线，行距不再被绑架）。
+
 ## 6. 构建与部署
 
 脚本分**两层**：底层 `build.ps1` / `release.ps1` 只负责干活，
@@ -1565,6 +1790,27 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
 - ✅ 构建脚本内置缓存清理：`build.ps1` 默认先清 `bin`/`obj`（`-NoClean` 可跳过）；
   移除冗余的 `dotnet build` 与一段会覆盖托盘图标的 WGestures 遗留代码
 - ✅ 代码清理：移除 MainWindow、Core/* 及 MenuOverlayWindow.CalculateMenuPosition 等不可达代码
+
+#### V0.2 界面精修（2026-09-21 ~ 09-23）
+
+- ✅ **设置窗口导航改为左侧纵向导航**（168 宽、实心块选中态），共 4 页：
+  菜单样式 / 操作配置 / 悬空寺 / 杂项设置
+- ✅ **菜单样式预览改为衍生窗** `MenuPreviewWindow`：贴在主窗口界外，
+  以 DWM 可见外框为基准（紧贴可见右缘、高齐平、无标题行、只圆外侧两角），
+  `ShowActivated=False` 不抢焦点；底色支持白 / 黑切换（不进 AppConfig）
+- ✅ **「操作配置」页重做**：三栏 150 | 画布 | 150，行内去掉「位置N · 方位」小字，
+  扇区↔行的对应关系完全由**引线**表达；点击画布扇区即选中对应行
+- ✅ **引线布局定版**：终点钉在下拉框侧边中点；形态 1 段直线 / 3 段「横→竖→横」；
+  竖直走廊由锚点环推导；四样式统一锚点环 `OpAnchorRingVisibleR = 93`；
+  行距 10 + 两列各自整列反向平移 9px（详见 5.25）
+- ✅ **新增 `DrawnRadius` 契约**：菜单基类新增「实际画到的最外半径」，
+  四样式各自重写，供"需要贴住图形边缘"的场合使用（详见 3.3）
+- ✅ **DWM 可见外框查询** `TryGetVisibleFrameBounds`：规避 WPF `Left/Width`
+  含约 8px 隐形拖拽边框导致的贴边留缝（详见 3.4）
+- ✅ **自检增强**：`--settingscheck` 新增一批离屏几何断言
+  （引线方向角 / 形态字符串 / 锚点间隙 / 两列偏移方向 / 起点契约 / 走廊位置 / 卡片高度），
+  覆盖"字段对了但没生效"这类只能靠截图发现的问题
+- ✅ 「操作配置」页下拉框加高到 44（高于全局 `FormRowH 32`），使线头落在框上
 
 ### V0.1 (2025-12 ~ 2026-01)
 - ✅ 完整设置窗口（菜单样式、操作配置、杂项设置）
