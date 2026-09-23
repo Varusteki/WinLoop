@@ -410,6 +410,14 @@ namespace WinLoop.Menus
         /// </summary>
         public override double CenterDeadZoneRadius => _deadZoneRadius;
 
+        /// <summary>
+        /// 同心圆 / 星 / 剪影都是用 <c>_scale</c> 的矩阵画出来的，最外沿到归一化半径
+        /// <c>CSHeadshotPathData.MaxRadius</c> 为止；<see cref="VisualRadius"/> 另乘了
+        /// EXTENT_MARGIN（1.02），比"看得见的边"略大 —— 与 <c>_deadZoneRadius</c>
+        /// 一样必须用 <c>_scale</c> 而不是 VisualRadius 做基准。
+        /// </summary>
+        public override double DrawnRadius => _scale * CSHeadshotPathData.MaxRadius;
+
         public override void HighlightItem(MenuItemPosition itemPosition)
         {
             _highlightedPosition = itemPosition;

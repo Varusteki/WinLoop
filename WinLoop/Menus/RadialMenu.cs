@@ -94,6 +94,24 @@ namespace WinLoop.Menus
         /// </remarks>
         public virtual double CenterDeadZoneRadius => 0.0;
 
+        /// <summary>
+        /// 图形**实际画到**的最外半径 —— 「看得见的边」，不含为定位 / 标签预留的留白。
+        ///
+        /// 与 <see cref="VisualRadius"/> 的分工：
+        ///   - <b>VisualRadius</b> 是"元素半尺寸"，含各样式自己的绘制外扩系数
+        ///     （蜘蛛网 1.1、八卦 1.2、八角星 1.02）。用途是**定位与命中** ——
+        ///     那里要的是"占位多大"，留白多一点才安全；
+        ///   - <b>DrawnRadius</b> 只描述墨迹范围。凡是需要**贴住图形边缘**的场合
+        ///     （设置页「操作配置」把引线锚点围成一圈）必须用它：拿 VisualRadius 去算，
+        ///     锚点会浮在留白里 —— 而且各样式的留白比例不同，浮的距离还不一样，
+        ///     八条线看着就不齐（2026-09-22 用户反馈"引线起点应该更接近菜单图案"）。
+        ///
+        /// 默认不重写 = 两者相同（圆环就是：外圆半径即元素半径，没有留白）。
+        /// ⚠️ 改各样式绘制半径时本属性要跟着改：它算错**不会报错、也看得见图形**，
+        /// 只会让贴着它的东西（引线锚点、将来的标注）静悄悄地飘在留白里。
+        /// </summary>
+        public virtual double DrawnRadius => VisualRadius;
+
         public void Initialize(AppConfig config, Point centerPoint)
         {
             Config = config;

@@ -238,6 +238,84 @@
             <Setter Property="Margin" Value="0,4,0,4"/>
         </Style>
 
+        <!-- ==================== 操作配置页：选区行 ====================
+             「操作配置」页是三栏结构：左列 4 行 + 中间菜单 + 右列 4 行，
+             左右之间的对应关系用折线引线表达（引线由代码画在 OpConnectorLayer 上）。
+
+             一个 Border 就是一行「选区 → 动作」。
+             ⚠️ Background / BorderBrush 的初始值是 **Transparent 而不是缺省**：
+             "当前选中哪一行"靠代码改这两个属性表达，透明保证未选中时没有可见色块；
+             同时 1px 边框**始终占位**，选中时不会因为多出一条边而让行高抖一下。 -->
+        <!-- 行距由这里统一给（行内控件一律不带外边距）：
+             行高 = 边框 2 + 上下内边距 2×2 + 下拉框 **44** = **50**，行距取 **10**。
+             ⚠️ 行高 / 行距 / 两列的竖直偏移都是**算出来的、不是手感**：
+             ① 锚点 y 只由圆周位置定：位置1（正上）与位置5（正下）在菜单中心的 **±R**，
+                R = 锚点环半径 = OpAnchorRingVisibleR(93) + OpAnchorGap(6) = **99**
+                （四样式 99.0~99.4，见 UpdateOpConnectors 的 anchorR）。
+                行心 y 与锚点 y 相等的那条引线没有台阶，退化成**一段水平直线**。
+             ② 于是"要让哪两条变直"就是**唯一**的约束。用户 2026-09-22 定的目标是
+                **左下（位置5＝左列第 4 行）与右上（位置1＝右列第 1 行）**。
+                设行心间距 s = 行高 + 行距 = 60、列偏移 t，则
+                    右列行心 = t + (−1.5s, −0.5s, +0.5s, +1.5s)
+                    左列行心 = t + (−1.5s, −0.5s, +0.5s, +1.5s)      （左列第 4 行 = 位置5）
+                反解：右列第1行 = −R → t_右 = 1.5s − R = **−9**（右列整体**上移 9**）
+                      左列第4行 = ＋R → t_左 = R − 1.5s = **＋9**（左列整体**下移 9**）
+                结果四行行心（负=上）：
+                    右列  −99 / −39 / +21 / +81        左列  −81 / −21 / +39 / +99
+                位置1 行心 −99 = 锚点 −99 ✓、位置5 行心 +99 = 锚点 +99 ✓ → 两条各只剩一段直线。
+                ⚠️ **两列刻意错开 18px，不要"对齐"回去**：这是把这两条拉直的唯一解，
+                用户明确说过"不需要保持左右控件的对齐"。
+                ⚠️ 也不能靠"把行距加到 16"在对称布局下达成 —— 那版行组顶满画布（248/252）
+                且同样只能改一对，用户已否掉。
+             ③ 行组外沿**与行距无关**：最外行心恒为 ±R → 外沿 = ±(99 + 行半高 25) = **±124**，
+                画布半高 126 → 恰好留 2px。所以行距可以自由选（这里回到 10：视觉舒适，
+                两列错开后 4 行总高 230，画布还剩 22px）。
+                想让那两条以外的线也变短，只能改 R（＝改菜单大小），不是改行距。
+             ④ 下拉框 44 = 行高 50 − 上下留白 2×2 − 边框 2，即"框几乎填满行"。
+                与引线无关（起点按框的侧边中点算，框多高都行）。
+             横向内边距 8→4（2026-09-22）：引线起点按**下拉框**的朝内边缘算
+                （不再按行边框，见 UpdateOpConnectors），4 的留白让起点离下拉框只剩 2px，
+                选中态又还能在大框外露出一圈浅底。 -->
+        <!-- ⚠️ Margin 只写 bottom（行距）时，**StackPanel 会把末尾那段行距也算进高度**：
+             4 行 230 里最后那 10px 是"空的一段" → 行组整体上移 5px。
+             两个 margin 都必须含"抵消末尾行距"的项（bottom = −10），再叠加整列偏移。
+             精确算法（元素顶 = (H − h − top − bottom)/2 + top）：
+                · 只抵消、不偏移       → top 0,  bottom −10  （基准，顶 = (H−h)/2 + 5）
+                · bottom 每 +2 → 元素上移 1px；top 每 +2 → 元素下移 1px
+                · 右列上移 9px → bottom = −10 + 18 = **+8**   → Margin="0,0,0,8"
+                · 左列下移 9px → top = 0 + 18 = **18**        → Margin="0,18,0,-10"
+             改行距或改偏移量都要**同步改这两个 Margin**（自检 ⑤d / ⑤f / ⑤g 三重兜底）。 -->
+        <Style x:Key="OpRowStyle" TargetType="Border">
+            <Setter Property="Padding" Value="4,2"/>
+            <Setter Property="Margin" Value="0,0,0,10"/>
+            <Setter Property="CornerRadius" Value="6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="BorderBrush" Value="Transparent"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+        </Style>
+
+        <!-- ⚠️ 本页的下拉框**刻意比 FormRowH(32) 高**：44 = 行高 50 − 留白。
+             2026-09-22 第四轮之前，这个高度是"引线起点沿行边缘滑动 ±21 时不许滑出框"
+             的硬约束（44 = 2×(21+1)）；第四轮起点钉死在**框侧边中点**后这条约束消失了，
+             44 变成纯外观选择（框填满整行）—— 所以本页 8 个框共用这个高度只是为了统一，
+             改它不再影响引线，只要行高仍是 50（同步调 OpRowStyle 的上下内边距）。 -->
+        <Style x:Key="OpComboStyle" TargetType="ComboBox" BasedOn="{StaticResource ComboStyle}">
+            <Setter Property="Height" Value="44"/>
+        </Style>
+
+        <!-- ⚠️ 刻意**没有** OpRowTitleStyle：行内不再写「位置N · 方位」小字
+             （2026-09-22 用户要求去掉）。行与扇区的对应完全由引线表达，
+             再写一遍文字是重复信息，还会把行撑高、引线起点上下飘。
+             代价是"哪一行是哪个位置"只剩引线一个凭据 —— 引线画不出来时就真的认不出，
+             所以自检里那几条**方向角断言**是这页唯一的正确性保障，别删。 -->
+
+        <!-- 引线的颜色。刻意**不复用** LineEdge（#E0E0E0）——
+             引线是"要看清楚"的信息载体，不是背景装饰，用卡片描边那么淡的灰
+             在白卡上几乎看不见（实测截图里要眯眼才分辨得出）。
+             取值比首版（#CFCFCF）略深：反馈"不美观"的主因之一是线太淡、在白卡上发虚。 -->
+        <SolidColorBrush x:Key="OpConnectorLine" Color="#FFC4C4C4"/>
+
         <!-- 卡片内的次级分隔块（不带外框，仅用于配色组这类子区域） -->
         <Style x:Key="SubSectionBorder" TargetType="Border">
             <Setter Property="CornerRadius" Value="7"/>
@@ -887,74 +965,155 @@
                                     </StackPanel>
                                 </Border>
 
-                                <!-- 卡片 2：效果预览。参照 PixPin —— 预览放在表单流末尾，
-                                     与配置项同一个滚动容器，不再叠加浮动层。
-                                     画布 280×280 是"完整显示"的基准线：半径超过 ~130 逻辑像素
-                                     就会被裁切，届时下方自动标注实际缩放比例（B 档）。 -->
-                                <Border Style="{StaticResource GroupBorder}" Margin="0,0,0,0">
-                                    <StackPanel>
-                                        <TextBlock Text="效果预览" Style="{StaticResource GroupHeaderStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,12"/>
-                                        <Canvas Name="PreviewCanvas" Background="#00000000"
-                                                MinHeight="240" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                Width="280" Height="280"/>
-                                        <TextBlock Name="PreviewFitLabel" Style="{StaticResource HintStyle}"
-                                                   HorizontalAlignment="Center" TextAlignment="Center"
-                                                   Margin="0,8,0,0"/>
-                                    </StackPanel>
-                                </Border>
+                                <!-- 效果预览**已移出本页** —— 见 UI/MenuPreviewWindow.xaml。
+                                     原先它作为「卡片 2」跟在参数卡后面，同一个滚动容器里
+                                     必然超出一屏，用户调参数时必须下滑才能看到预览。
+                                     现在预览是贴在**本窗口右侧界外**的衍生窗口：
+                                     参数区回到一屏内（无需滚动），预览常驻可见，互不挤占高度。
 
+                                     ⚠️ 画布与比例说明文字都不在本窗口了，
+                                     代码里凡涉及预览的读写一律走 _previewWindow
+                                     （MenuPreviewWindow.PreviewCanvas / PreviewFitLabel）。 -->
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
 
                     <!-- ========== 页 2：操作配置 ==========
-                         ⚠️ 本页修掉了「下拉框与提示文字重叠」：根因是 ComboStyle 自带的
-                         Margin="0,6" 与提示文字的上边距叠加，现已把行距统一交给行模型。 -->
+                         三栏布局：左列 4 行 + 中间菜单 + 右列 4 行。
+                         8 个选区**同时**列出（不再是"点一个看一个"），
+                         参数区与菜单在同一屏内，不需要下滑。
+
+                         左右分组按扇区方位定：Position1~4（上/右上/右/右下）在右列，
+                         Position5~8（下/左下/左/左上）在左列 —— 这样每个扇区的引线
+                         都朝自己那一侧引出，8 条线天然不交叉。
+                         列内顺序也按方位排（右列自上而下 上→右下，左列自上而下 左上→下），
+                         保证行的上下次序与扇区的上下次序一致，线不会互穿。
+
+                         ⚠️ 行内**刻意不写**「位置N · 方位」文字（2026-09-22 用户要求去掉）；
+                         卡片顶部也没有「扇区动作」组标题。行与扇区的对应关系**只由引线表达** ——
+                         所以引线是这一页唯一的信息骨架，不是装饰。
+
+                         ⚠️ 引线不在 XAML 里 —— 它要跨三栏画，且依赖运行时布局尺寸，
+                         由 UpdateOpConnectors() 画在 OpConnectorLayer 上（IsHitTestVisible=False）。
+                         ⚠️ 三个 Canvas/StackPanel 的 Name 与 8 个行的 Name 都被
+                         SettingsWindow.xaml.cs 按名字索引，改名要同步改代码。 -->
                     <TabItem Header="操作配置">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,20" VerticalAlignment="Top">
-                            <StackPanel Name="OpConfigRoot">
-                                <TextBlock Text="操作配置" Style="{StaticResource PageTitleStyle}"/>
+                        <!-- ⚠️ 这一页的 ScrollViewer **故意不加** VerticalAlignment="Top"：
+                             它必须撑满整页高度，下面的卡片才能靠 MinHeight = 视口高顶满整页
+                             （代码里由 SyncOpPageCardHeight 同步，见 SettingsWindow.xaml.cs）。
+                             卡片若只按内容高度排，就只在页面顶部占一条、下面空一大片 ——
+                             用户 2026-09-22 反馈的"面板在整个设置窗口吊着"正是这个。 -->
+                        <ScrollViewer Name="OpPageScroll" VerticalScrollBarVisibility="Auto"
+                                      Padding="24,20,24,20">
+                            <!-- ⚠️ 这一页**刻意没有**页面大标题（2026-09-22 用户要求去掉）：
+                                 左侧导航已写着「操作配置」，标题只是重复。
+                                 整页就这一张卡，Margin 置 0 —— GroupBorder 自带 12 的底边距，
+                                 叠上去会超出视口，反而逼出一条多余的滚动条。 -->
+                            <Border Name="OpPageCard" Style="{StaticResource GroupBorder}" Margin="0">
+                                <!-- ⚠️ 卡片顶部**刻意没有**「扇区动作」小标题与分割线
+                                     （2026-09-22 用户要求删）：左边导航已经写着「操作配置」，
+                                     卡里再顶一行组名是重复的一层层级，白占纵向空间。 -->
+                                <Grid Name="OpLayoutGrid" Margin="0,0,0,2" VerticalAlignment="Center">
+                                    <Grid.ColumnDefinitions>
+                                        <!-- 186→150（2026-09-22 用户"配置选项适当调小点"）：
+                                             列让窄 → 行的朝内边缘离菜单中心更远 → 中间的菜单
+                                             能把这一列的空间用满（不再被固定系数 0.72 缩小，
+                                             见 ComputeOpFitCap），长下拉框也仍放得下。
+                                             150 = 下拉框 134 + 行内边距 8×2，最长动作名仍放得下。 -->
+                                        <ColumnDefinition Width="150"/>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="150"/>
+                                    </Grid.ColumnDefinitions>
 
-                                <Border Style="{StaticResource GroupBorder}">
-                                    <StackPanel>
-                                        <TextBlock Text="扇区动作" Style="{StaticResource GroupHeaderStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,14"/>
-
-                                        <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="Auto"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-
-                                            <!-- 左：可点击的菜单预览 -->
-                                            <StackPanel Grid.Column="0" Margin="0,0,24,0">
-                                                <Canvas Name="OpPreviewCanvas" Background="#00000000" Width="220" Height="220"
-                                                        MouseLeftButtonDown="OpPreviewCanvas_MouseLeftButtonDown"/>
+                                            <!-- ── 左列：左半侧扇区（左上 / 左 / 左下 / 下）──
+                                                 行内只有一个动作下拉框，**不写**位置文字 —— 行与扇区的
+                                                 对应全靠引线（否则文字是重复信息，还把行撑高、
+                                                 让引线起点上下飘）。 -->
+                                            <!-- 左列＝位置8/7/6/5（从上到下），要让它**整体下移 9px**：
+                                                 top=+18 使元素下移 9px，bottom=−10 抵消末尾行距。
+                                                 下移后第 4 行（位置5 正下）行心 = +99 = 锚点 y → 一段直线。
+                                                 见 OpRowStyle 上方注释的 ②。 -->
+                                            <StackPanel Name="OpLeftList" Grid.Column="0" VerticalAlignment="Center"
+                                                        Margin="0,18,0,-10">
+                                                <Border Name="OpRowP8" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP8" Tag="7" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
+                                                <Border Name="OpRowP7" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP7" Tag="6" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
+                                                <Border Name="OpRowP6" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP6" Tag="5" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
+                                                <Border Name="OpRowP5" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP5" Tag="4" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
                                             </StackPanel>
 
-                                            <!-- 右：当前选中扇区的配置 -->
-                                            <StackPanel Grid.Column="1" Name="OpSettingsPanel" VerticalAlignment="Top" Margin="0,14,0,0">
-                                                <TextBlock Name="CurrentPositionLabel" Text="位置1 (上)" FontSize="15"
-                                                           FontWeight="Medium" Foreground="{StaticResource TextMain}"
-                                                           Margin="0,0,0,16"/>
-                                                <Grid Style="{StaticResource SettingRow}">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="56"/>
-                                                        <ColumnDefinition Width="*"/>
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Text="动作" Style="{StaticResource LabelStyle}"/>
-                                                    <ComboBox Grid.Column="1" Name="CurrentPositionCombo" Style="{StaticResource ComboStyle}"
-                                                              Width="210" HorizontalAlignment="Left"
-                                                              SelectionChanged="CurrentPositionCombo_SelectionChanged"/>
-                                                </Grid>
-                                                <TextBlock Style="{StaticResource HintStyle}" Margin="0,20,0,0"
-                                                           Text="在左侧预览上点击任一扇区，即可为该方向指定动作。"/>
+                                            <!-- ── 中间：菜单本身（点击扇区即选中该选区的配置行）──
+                                                 ⚠️ 这一页的菜单是**示意图**：尺寸不是要展示的信息
+                                                 （真实尺寸看「菜单样式」页的衍生预览窗口），
+                                                 职责是把中间这列的空间用满、当好引线的锚点环 ——
+                                                 所以按可用空间尽量画大，并且**允许放大**
+                                                 （与「菜单样式」页"只缩小不放大"的规则不同）。
+                                                 约束只剩两条：画布装得下、锚点环 + 选中态圆点
+                                                 不许越进行的内边缘（后者按**实测**反解，
+                                                 见 SettingsWindow.xaml.cs 的 ComputeOpFitCap）。 -->
+                                            <Canvas Name="OpPreviewCanvas" Grid.Column="1"
+                                                    Width="252" Height="252"
+                                                    Background="#00000000"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                    MouseLeftButtonDown="OpPreviewCanvas_MouseLeftButtonDown"/>
+
+                                            <!-- ── 右列：右半侧扇区（上 / 右上 / 右 / 右下）── -->
+                                            <!-- 右列＝位置1/2/3/4（从上到下），要让它**整体上移 9px**：
+                                                 bottom=+8 使元素上移 9px（含抵消末尾行距的 −10 基准）。
+                                                 上移后第 1 行（位置1 正上）行心 = −99 = 锚点 y → 一段直线。
+                                                 见 OpRowStyle 上方注释的 ②。 -->
+                                            <!-- 右列＝位置1/2/3/4（从上到下），要让它**整体上移 9px**：
+                                                 bottom=+8 使元素上移 9px（含抵消末尾行距的 −10 基准）。
+                                                 上移后第 1 行（位置1 正上）行心 = −99 = 锚点 y → 一段直线。
+                                                 见 OpRowStyle 上方注释的 ②。 -->
+                                            <StackPanel Name="OpRightList" Grid.Column="2" VerticalAlignment="Center"
+                                                        Margin="0,0,0,8">
+                                                <Border Name="OpRowP1" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP1" Tag="0" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
+                                                <Border Name="OpRowP2" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP2" Tag="1" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
+                                                <Border Name="OpRowP3" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP3" Tag="2" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
+                                                <Border Name="OpRowP4" Style="{StaticResource OpRowStyle}">
+                                                    <ComboBox Name="OpComboP4" Tag="3" Style="{StaticResource OpComboStyle}"
+                                                              HorizontalAlignment="Stretch"
+                                                              SelectionChanged="OpActionCombo_SelectionChanged"/>
+                                                </Border>
                                             </StackPanel>
-                                        </Grid>
-                                    </StackPanel>
-                                </Border>
-                            </StackPanel>
+
+                                            <!-- ── 引线层 ──
+                                                 铺满三栏、压在最上层，但 IsHitTestVisible=False：
+                                                 它只负责把每行连到菜单里对应的扇区，不参与任何交互
+                                                 （否则会挡住左右列的 ComboBox 点击与悬停）。
+                                                 引线画在**行的朝内边缘之外**，不进入行内，所以不会盖住行内容。 -->
+                                            <Canvas Name="OpConnectorLayer" Grid.ColumnSpan="3"
+                                                    IsHitTestVisible="False"/>
+                                </Grid>
+                            </Border>
                         </ScrollViewer>
                     </TabItem>
 

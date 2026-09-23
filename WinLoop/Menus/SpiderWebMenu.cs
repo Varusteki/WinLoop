@@ -49,6 +49,12 @@ namespace WinLoop.Menus
         /// </summary>
         public override double CenterDeadZoneRadius => _deadZoneRadius;
 
+        /// <summary>
+        /// 蛛网最外一圈就画在 <c>_outerRadius</c> 上；<see cref="VisualRadius"/> 额外乘了
+        /// 1.1 的留白，比"看得见的边"大一圈，不能拿来贴锚点。
+        /// </summary>
+        public override double DrawnRadius => _outerRadius;
+
         private double _deadZoneRadius;
 
         protected override void OnRender(DrawingContext dc)

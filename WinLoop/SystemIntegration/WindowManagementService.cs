@@ -87,6 +87,44 @@ namespace WinLoop.SystemIntegration
         }
 
         /// <summary>
+        /// 取窗口的**可见外框**（DWM 扩展边框），单位**物理像素**。
+        ///
+        /// ⚠️ 为什么不能直接用 WPF 的 <c>Window.Left/ActualWidth</c> 去拼窗口：
+        /// Win10/11 会给带标题栏的窗口在左 / 右 / 下留约 8px 的**不可见**阴影边框
+        /// （拖拽热区），而 WPF 报出的 <c>Left/Top/Width/Height</c> 是**含它的外层矩形**。
+        /// 于是"把 B 窗左边贴到 A 窗 <c>Left+ActualWidth</c>"算出来的位置，
+        /// 视觉上会凭空多出一条 8~9px 的缝 —— 用户看到的"两个窗口没贴在一起"就是它。
+        /// 要真正贴着 A 窗的**看得见的边**，只能问 DWM 要扩展边框。
+        ///
+        /// 注：本项目的窗口是 Per-Monitor V2，返回值是物理像素；
+        /// 调用方若要用在 <c>Window.Left/Top</c>（DIP）上，需除以该屏的 DPI 缩放系数。
+        /// 失败（DWM 被关闭 / 句柄无效）返回 false，调用方自行降级。
+        /// </summary>
+        public static bool TryGetVisibleFrameBounds(IntPtr hwnd, out Rect boundsPx)
+        {
+            boundsPx = Rect.Empty;
+            if (hwnd == IntPtr.Zero) return false;
+
+            try
+            {
+                RECT frameRect;
+                int hr = DwmGetWindowAttribute(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS,
+                    out frameRect, Marshal.SizeOf(typeof(RECT)));
+                if (hr != 0) return false;
+
+                boundsPx = new Rect(frameRect.Left, frameRect.Top,
+                    frameRect.Right - frameRect.Left,
+                    frameRect.Bottom - frameRect.Top);
+                return boundsPx.Width > 0 && boundsPx.Height > 0;
+            }
+            catch (Exception ex)
+            {
+                App.Log("TryGetVisibleFrameBounds failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        /// <summary>
         /// 取目标窗口所在显示器的工作区（物理像素，已排除任务栏）。
         ///
         /// 不用 WPF 的 SystemParameters.WorkArea：那是逻辑单位，

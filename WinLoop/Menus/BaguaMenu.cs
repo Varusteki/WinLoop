@@ -73,6 +73,13 @@ namespace WinLoop.Menus
         /// </summary>
         public override double CenterDeadZoneRadius => _deadZoneRadius;
 
+        /// <summary>
+        /// 看得见的边是**最外圈八边形**（<c>_outerRadius * 0.95</c>，与 DrawOctagonFrame 的
+        /// radii[0] / 高亮扇区外缘同源）；爻码画到 0.85、卦名只到 0.42，都在更内侧。
+        /// <see cref="VisualRadius"/> 那个 1.2 倍外扩纯粹是留白，不能当"边"用。
+        /// </summary>
+        public override double DrawnRadius => _outerRadius * 0.95;
+
         private double _deadZoneRadius;
 
         protected override void OnRender(DrawingContext dc)

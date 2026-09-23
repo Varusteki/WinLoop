@@ -1,0 +1,165 @@
+﻿<Window x:Class="WinLoop.UI.MenuPreviewWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="菜单预览"
+        Width="340"
+        Height="480"
+        SizeToContent="Manual"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        ResizeMode="NoResize"
+        WindowStartupLocation="Manual"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Background="Transparent"
+        FontSize="14"
+        FontFamily="{StaticResource UiFontFamily}"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="Grayscale"
+        SnapsToDevicePixels="True">
+    <Window.Resources>
+        <!-- 与设置窗口同一套设计令牌，但这里**必须重新定义一份**：
+             StaticResource 不跨窗口查找，SettingsWindow.Window.Resources 里的
+             CardBg / LineEdge 之类在这里解析不到（会抛 XamlParseException）。
+             只取本窗口用得上的几个，值保持与设置窗口一致。 -->
+        <SolidColorBrush x:Key="CardBg"    Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="LineEdge"  Color="#FFE0E0E0"/>
+        <SolidColorBrush x:Key="TextFaint" Color="#FF8A8A8A"/>
+        <SolidColorBrush x:Key="TextSub"   Color="#FF5A5A5A"/>
+        <SolidColorBrush x:Key="Accent"    Color="#FF0F6CBD"/>
+        <SolidColorBrush x:Key="SegHover"  Color="#FFF2F6FB"/>
+
+        <!-- 预览底色两档。**深色用纯黑**（不是深灰）：
+             用户切深色是为了检查菜单在最苛刻的底色上还看不看得见，
+             用"深灰"会把对比度问题糊过去。 -->
+        <SolidColorBrush x:Key="PreviewBgLight" Color="#FFFFFFFF"/>
+        <SolidColorBrush x:Key="PreviewBgDark"  Color="#FF000000"/>
+
+        <Style x:Key="HintStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="LineHeight" Value="19"/>
+            <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+
+        <!-- 预览底色切换按钮（分段式单选项）。
+             ⚠️ 触发器顺序 = 优先级：IsMouseOver 必须写在 IsChecked **之前**，
+             否则鼠标划过选中项时 hover 的浅底会把选中态的蓝底盖掉。 -->
+        <Style x:Key="SegRadioStyle" TargetType="RadioButton">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Foreground" Value="{StaticResource TextSub}"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <!-- ⚠️ ControlTemplate 只能有一个直接子级（否则 MC3089），
+                         所以 ContentPresenter 必须藏在 Border 里。 -->
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd"
+                                Background="#FFFFFFFF"
+                                BorderBrush="{StaticResource LineEdge}"
+                                BorderThickness="1"
+                                CornerRadius="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource SegHover}"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource Accent}"/>
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                                <Setter Property="Foreground" Value="#FFFFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <!-- 整窗就是一张白卡：无边框 + 1px 边线 + 外侧圆角，与设置窗口里的卡片同观感。
+
+         ⚠️ 圆角必须配 AllowsTransparency="True"。只写 Border.CornerRadius 而不开
+         AllowsTransparency 的话，圆角四角会**露出窗口自己的方形底**（一块白/灰的直角），
+         圆角等于白做。代价是分层窗口不支持 ClearType，文字抗锯齿退回灰度
+         （所以上面把 TextRenderingMode 显式写成 Grayscale，不装作还在用 ClearType）——
+         本窗只有一行说明 + 两个按钮的文字，这点损失换圆角划算。
+
+         ⚠️ **只圆外侧两角（右），贴靠侧（左）保持直角** —— CornerRadius="0,8,8,0"。
+         预览窗是紧贴主窗口可见右缘弹出的，左侧那两个角正处在接缝上：
+         若也做圆角，会在接缝处各露出一个 8px 的三角缺口（透出桌面），
+         比直角难看得多。左侧直角 + 右侧圆角 = "从母窗口向右延伸出去的面板"，
+         接缝无缝、外缘收圆，是侧栏类面板的通行做法。
+
+         ⚠️ 刻意**不加标题行**：本窗贴在设置窗口右侧、与母窗口上下沿齐平，是母窗口的延伸面板，
+         自己再顶一行「效果预览」+ 分割线既重复（母窗口标题已说明这是什么界面），
+         又白占纵向空间、把画布往下压。整窗内容就是「画布 + 一行比例说明 + 底色切换」。
+
+         ⚠️ 高度**不由内容决定**（SizeToContent="Manual"）：窗口高度是运行时按
+         主窗口的**可见高度**设定的（见 MenuPreviewWindow.Reposition），目标是两个窗口
+         上下沿齐平。所以这里只给一个合理的默认高度，真正的值在代码里落地；
+         内容块用 VerticalAlignment="Center" 在整高卡片里居中。
+
+         ⚠️ 左右内边距取 19（不是设置窗口的 20）：卡片内容宽 = 340 − 1×2(边线) − 19×2
+         = 300，正好放得下 300 宽的画布与切换按钮行，两者左右边缘对齐。
+         用 20 的话可用宽只有 298，画布会左右各溢出 1px。 -->
+    <Border x:Name="CardBorder"
+            Background="{StaticResource CardBg}"
+            BorderBrush="{StaticResource LineEdge}"
+            BorderThickness="1"
+            CornerRadius="0,8,8,0"
+            Padding="19,16">
+        <StackPanel VerticalAlignment="Center">
+            <!-- 底色块：切换浅色/深色就是改这一层的 Background（见 SetPreviewBackground）。
+                 底色**放在画布外面这一层**而不是画布自己身上，是为了能给它圆角 ——
+                 Canvas 没有 CornerRadius，套一层 Border 才圆得起来。
+                 ⚠️ Border 不裁剪子级，菜单仍可画满整块；现在也碰不到 6px 的角，
+                 因为 ApplyPreviewFit 已把菜单缩到 8px 内边距以内。 -->
+            <Border Name="PreviewBgBorder"
+                    Width="300" Height="300"
+                    CornerRadius="6"
+                    Background="{StaticResource PreviewBgLight}"
+                    HorizontalAlignment="Center">
+                <!-- 画布尺寸**写死**，不参与布局协商：
+                     预览的定位与缩放都依赖一个确定的画布尺寸（见 ApplyPreviewFit），
+                     而窗口高度是与母窗口对齐的定值，若让画布跟着窗口弹性变化，
+                     会形成"内容 → 窗口尺寸 → 内容"的循环依赖。
+                     画布自身透明，底色由外层 Border 提供。 -->
+                <Canvas Name="PreviewCanvas"
+                        Width="300" Height="300"
+                        Background="Transparent"/>
+            </Border>
+
+            <TextBlock Name="PreviewFitLabel" Style="{StaticResource HintStyle}"
+                       HorizontalAlignment="Center" TextAlignment="Center"
+                       Margin="0,10,0,0"/>
+
+            <!-- 预览底色切换：白色 / 黑色。
+                 用途是检查菜单在深色壁纸或深色桌面上还看不看得清 —— 菜单自身颜色来自用户配置，
+                 换底色只是换对照背景，**不会写进配置**。
+                 选中态与画布底色统一由 SetPreviewBackground 收口（含跨窗口记忆）。 -->
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <RadioButton x:Name="BgLightRadio" Grid.Column="0"
+                             GroupName="PreviewBg"
+                             Style="{StaticResource SegRadioStyle}"
+                             Content="白色背景" Tag="Light"
+                             Margin="0,0,5,0"
+                             IsChecked="True"
+                             Click="PreviewBackground_Click"/>
+
+                <RadioButton x:Name="BgDarkRadio" Grid.Column="1"
+                             GroupName="PreviewBg"
+                             Style="{StaticResource SegRadioStyle}"
+                             Content="黑色背景" Tag="Dark"
+                             Margin="5,0,0,0"
+                             Click="PreviewBackground_Click"/>
+            </Grid>
+        </StackPanel>
+    </Border>
+</Window>
