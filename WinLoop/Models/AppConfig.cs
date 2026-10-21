@@ -60,6 +60,19 @@ namespace WinLoop.Models
         // 触发时长（毫秒），PRD默认200ms
         public int TriggerDelay { get; set; } = 200;
 
+        /// <summary>
+        /// 「系统分屏修饰键」：触发菜单执行动作时若按住该修饰键，且动作是
+        /// 能被 Windows 系统分屏表达的选择（左/右半屏、四象限），
+        /// 改为触发对应的系统分屏（Win+方向键），走系统原生的 snap 体验。
+        /// 默认**左 Alt**（2026-10-21 用户指定）—— 不与任何常用手势冲突，
+        /// 且 WinLoop 主触发是中键，手持鼠标时左手按 Alt 很顺。
+        /// ⚠️ 老 config.json 没有此字段：DTO 侧用可空枚举接收（null → 用这个默认值），
+        /// 不能直接让 DTO 的 0 值漏进来 —— 那会把老配置变成"左 Shift"。
+        /// ⚠️ 这个字段**不参与** WindowAction 式序号持久化纪律（枚举整体按字符串/数字
+        /// 存取，新增成员只能追加在末尾，见 SnapModifierKey）。
+        /// </summary>
+        public SnapModifierKey SystemSnapModifier { get; set; } = SnapModifierKey.LeftAlt;
+
         // 悬空寺配置
         public XuanKongSiConfig XuanKongSi { get; set; } = new XuanKongSiConfig();
 
@@ -126,6 +139,22 @@ namespace WinLoop.Models
         Bagua
     }
 
+    /// <summary>
+    /// 「系统分屏」修饰键选项。顺序即设置界面下拉的显示顺序，
+    /// 成员**只许追加**——本枚举按数字持久化进 config.json（经 ConfigDto），
+    /// 重排会让老配置指向别的修饰键（症状：快捷键莫名其妙失灵或常触发）。
+    /// 默认值在 <see cref="AppConfig.SystemSnapModifier"/>（LeftAlt）。
+    /// </summary>
+    public enum SnapModifierKey
+    {
+        LeftShift,
+        RightShift,
+        LeftCtrl,
+        RightCtrl,
+        LeftAlt,
+        RightAlt
+    }
+
     public enum WindowAction
     {
         BackToDesktop,
@@ -143,9 +172,18 @@ namespace WinLoop.Models
         RightTwoThirds,
         // 以下为 V0.2 新增。必须追加在末尾：WindowAction 会按序号持久化到 config.json，
         // 插在中间会导致老用户的动作映射错位。
-        ToggleMaximize,
-        ToggleTopMost,
-        CloseWindow
+        //
+        // ⚠️ **13 / 14 是刻意的空号**：旧版在这两个序号上放过「最大化/还原切换」与
+        //    「窗口置顶切换」，2026-10-20 按用户要求删除。序号**不回收** ——
+        //    老配置里这两个数字仍有记录，若把 13 / 14 让给新动作，那些扇区会静默变成
+        //    另一个动作（反序列化按数字走，不会报错），症状是"某扇区行为莫名其妙变了"。
+        //    删除后新增动作从 **16** 继续追加；空号在加载时由
+        //    ConfigManager.MigrateActionMapping 兜底成该位置的默认动作。
+        //
+        // 15 = 关闭窗口（2026-10-21）
+        // 16 = 窗口居中（2026-10-21，不改尺寸只挪位置，带开关语义：再次触发还原）
+        CloseWindow = 15,
+        Center = 16
     }
 
     public enum MenuItemPosition

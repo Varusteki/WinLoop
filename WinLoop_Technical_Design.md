@@ -262,7 +262,7 @@ public class BasicRadialMenu : RadialMenu
 
 #### 功能描述
 - 封装 Windows API 实现窗口操作
-- 支持 16 种窗口操作
+- 支持 14 种窗口操作（设置页下拉框按「窗口状态 / 半屏 / 四分屏 / 三分之二屏」四组呈现）
 - 显示桌面通过模拟 Win+D 快捷键实现
 
 #### 支持的操作
@@ -270,6 +270,7 @@ public class BasicRadialMenu : RadialMenu
 |------|----------|
 | 最大化 | ShowWindow(hwnd, SW_MAXIMIZE) |
 | 最小化 | ShowWindow(hwnd, SW_MINIMIZE) |
+| 关闭窗口 | PostMessage(hwnd, WM_SYSCOMMAND, SC_CLOSE) |
 | 显示桌面 | keybd_event(VK_LWIN + VK_D) |
 | 左/右/上/下半屏 | MoveWindow + 屏幕尺寸计算 |
 | 四分屏 | MoveWindow + 屏幕尺寸计算 |
@@ -433,7 +434,9 @@ public enum WindowAction
     BackToDesktop, Minimize, Maximize,
     LeftHalf, RightHalf, TopHalf, BottomHalf,
     TopLeftQuadrant, BottomLeftQuadrant, TopRightQuadrant, BottomRightQuadrant,
-    LeftTwoThirds, RightTwoThirds
+    LeftTwoThirds, RightTwoThirds,
+    // 13 / 14 = 空号（旧版的 ToggleMaximize / ToggleTopMost，2026-10-20 删除，序号不回收）
+    CloseWindow = 15
 }
 
 public enum MenuItemPosition
@@ -676,8 +679,7 @@ Windows 会校验消息发起者与目标窗口的前台关系；不是用户直
 与用户描述的「高亮正常但窗口没最小化」完全吻合。
 
 **对照**：同文件的兄弟动作早就是前台无关写法 ——
-`MaximizeWindow` 用 `ShowWindow(hwnd, SW_MAXIMIZE)`，
-`ToggleMaximizeWindow` 用 `ShowWindowAsync(hwnd, SW_RESTORE/SW_MAXIMIZE)`。
+`MaximizeWindow` 用 `ShowWindow(hwnd, SW_MAXIMIZE)`。
 只有最小化这一个动作踩了坑。
 
 **解决**：改用与兄弟动作一致的写法，**直接设置窗口状态**，不走用户主动语义：
@@ -691,7 +693,7 @@ ShowWindowAsync(hwnd, SW_MINIMIZE);   // ✅ 不依赖前台
 不在本约束范围内 —— 回归里专门钉住这个例外，防止被「顺手统一」掉。
 
 **回归**：`Tools/MenuProbe` 新增静态契约检查（源码扫描），
-断定 `MinimizeWindow` / `MaximizeWindow` / `ToggleMaximizeWindow` 的**可执行代码**
+断定 `MinimizeWindow` / `MaximizeWindow` 的**可执行代码**
 中不得出现 `WM_SYSCOMMAND` / `SC_MINIMIZE`，且必须有 `ShowWindow*` 调用；
 注释里出现这些词是允许的（用来说明为什么不能用），扫描前先剥注释。
 断言 `CloseWindow` 仍保留 `SC_CLOSE`。总数 **917 → 921 项**。
@@ -1811,6 +1813,267 @@ HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Run
   （引线方向角 / 形态字符串 / 锚点间隙 / 两列偏移方向 / 起点契约 / 走廊位置 / 卡片高度），
   覆盖"字段对了但没生效"这类只能靠截图发现的问题
 - ✅ 「操作配置」页下拉框加高到 44（高于全局 `FormRowH 32`），使线头落在框上
+
+### 2026-10-20 动作表精简 + 下拉框分组
+- ✅ **删除 2 个动作**：最大化/还原切换（旧序号 13）、窗口置顶切换（旧序号 14）。
+  同步移除 `WindowManagementService` 的两个 switch 分支、两个私有方法，以及随之变成死代码的
+  P/Invoke（`GetWindowPlacement` / `WINDOWPLACEMENT` / `GetWindowExStyle` / `GetWindowLongPtr64` /
+  `GetWindowLong32` / `HWND_TOPMOST` / `HWND_NOTOPMOST` / `SWP_NOMOVE` / `SWP_NOSIZE`）。
+- ⚠️ **序号 13 / 14 保留为空号，不回收**：`WindowAction` 按序号写进 `config.json`，
+  回收会让老配置里的旧值静默映射成另一个动作（JSON 按数字反序列化，不报错，
+  症状是"某扇区行为莫名其妙变了"）。加载时由 `ConfigManager.MigrateActionMapping`
+  把未定义值退回该位置的默认动作并写日志。
+- ✅ **「操作配置」下拉框分组**：14 个动作分「窗口状态 / 半屏 / 四分屏 / 三分之二屏」四组，
+  组头作为**不可选的数据行**插在列表里（不用 `GroupStyle` —— 真分组会让 ComboBox
+  折叠态显示组名而不是动作名）。文案收敛到 `SettingsWindow.ActionCatalog` 一张表，
+  同时删掉重复的 `MapActionToChinese`（第二份文案源，且已无调用点）。
+- ✅ 回归调整：`Tools/MenuProbe` 的兄弟动作扫描名单去掉 `ToggleMaximizeWindow`（方法已不存在，
+  留着会直接判 FAIL）。
+- ✅ **下拉框重绘整套模板**：原本用的是 Aero 默认模板（方角、系统蓝高亮、3D 箭头、17px 粗滚动条），
+  与白卡扁平风格冲突。现在 `ComboStyle` 自带 `ControlTemplate`：
+  收起态与 `InputStyle` 同语汇（1px `InputEdge` / 圆角 5 / 悬停 `InputEdgeHot` / 聚焦 `InputEdgeOn`），
+  弹层为白底圆角 9 浮层 + 淡投影 + 细滚动条（`ComboScrollBarStyle` 7px），
+  选中项 `AccentSoft` 底 + `Accent` 字，箭头随 `IsDropDownOpen` 旋转 180°。
+  三个不可省的模板契约写进了 XAML 注释：`PART_Popup` 命名、`ToggleButton` 铺满且
+  `Focusable=False`、收起态必须取 `SelectionBoxItem`（取 `Items[0]` 会让"未选中"显示成第一项，
+  直接破坏"8 个下拉框按配置回填"的自检）。
+  投影拆成独立一层 Border —— Effect 作用于整棵子树，加在内容层上会把字一起糊掉。
+- ✅ **修「收起态显示数据类型名」**：三个下拉框原先用 `DisplayMemberPath="Label"` 指定显示字段。
+  但 ComboBox **收起态**取的是 `SelectionBoxItem` + `SelectionBoxItemTemplate`，
+  `DisplayMemberPath` 只作用于弹层内的容器项、**不生成**那份模板 → 模板恒为 null →
+  收起态的 `ContentPresenter` 只能把数据对象调 `ToString()`，框里就显示成
+  `WinLoop.UI.ActionOption` 而不是"最小化窗口"。
+  弹层是另一条链路所以一直正常，症状只在收起态出现 —— 这也是它之前只能靠截图发现的原因。
+  **修复 = 三处全部改用 `ItemTemplate`**（XAML 资源 `ComboItemLabelTemplate`，一个绑 `Label`
+  的 `TextBlock`；组头行仍显示自己的 Label，不可选性由 `OpActionItemStyle` 的 DataTrigger 管）。
+  独立 WPF 探针对照三种配置实测：只 `DisplayMemberPath` → 收起态模板 null、显示类型名；
+  只 `ItemTemplate` → 收起态模板 set、显示中文标签；**两者同时设直接抛
+  `InvalidOperationException`**，所以只能二选一。`--settingscheck` 已加断言 ①b
+  （`SelectionBoxItemTemplate` 非空、与 `ItemTemplate` 同一份实例、拿它真渲染一次不含类型名）。
+- ✅ **下拉框第二轮美化**（用户反馈"还是不太好看"，仅源码未构建）：
+  ① 箭头放大到 10×6 / 描边 1.6；② 弹层 `DropDownBd` 左右 Padding 归零，
+  修掉与收起态文字左缘错 4px 的问题（收起态 1+9=10px，弹层原 1+4+9=14px）；
+  ③ 聚焦/展开态补 `Bd.BorderThickness=1.4`，与 `InputStyle` 聚焦加粗同构——
+  原先只换色不加粗，聚焦态与悬停态只剩深浅差别，分不清"光标在里面"还是"鼠标飘过"；
+  ④ 悬停补 `NavHoverBg` 整块填充（全站统一 hover 令牌，输入框只有边变深是刻意的：
+  下拉框是点击目标，需要"可点"的 affordance）；展开态背景重回 `CardBg`，
+  蓝边+蓝箭头已表达"活跃锚点"，再带灰底会和弹层高亮行糊成一团；
+  ⑤ 弹层投影 Opacity 0.14→0.16 / Depth 2→3（白卡上的白浮层，原参数太弱像贴在卡上）；
+  ⑥ `ComboStyle` 加 `Cursor=Hand`。触发器顺序即优先级：展开态放最后，
+  同时覆盖悬停与聚焦的边框/背景设置。
+
+### 2026-10-20 设置界面整体改版（对标 WorkBuddy 设置窗口）
+用户截图 WorkBuddy 风格设置窗口，要求「整个设置菜单按这个风格美化一版」。
+只改 `SettingsWindow.xaml` + 少量代码侧支撑，**未构建，等用户发话**。
+
+**整体语汇变化**（与旧版 LiquidGlass 蓝调风格的区别）：
+- 左侧导航：搜索框 + 图标导航（图标 Path 由每项 Content 自带，
+  `Stroke` 绑 `AncestorType=RadioButton` 的 `Foreground`，选中/悬停换色时跟随），
+  选中态从「蓝色块」改为「浅灰药丸」（`NavHoverBg #FFF5F5F5` + `TextMain` + Medium 字重），
+  全新 `NavItemStyle`（Height 34 / 圆角 7 / `Margin="8,2"`）。
+- 新增 `NavSearchStyle`（模板内置放大镜 Path：`EllipseGeometry` + `LineGeometry`，
+  保留 `PART_ContentHost`，聚焦蓝边 1.4）+ `NavSearchBox_TextChanged` /
+  `NavSearchBox_KeyDown`（回车跳第一个可见项）/ `FilterNav()`。
+  **过滤只改 `Visibility` 不销毁控件** —— 四项的 Name/GroupName/Checked 事件链
+  保持完好，`BindNavigation()` 按名字索引的逻辑不受影响。
+- 分组标题从「卡片内第一条」挪到**卡片上方**（`GroupHeaderStyle` Margin 0,16,0,8），
+  卡片退化为纯内容容器（白底无框）。
+- **行间分割线整体删除**（`RowSeparator` 样式已删）：靠分组间距替代。
+- 控件右对齐：`FormLabelCol` 108→240（容纳行说明文字，把控件推到右侧），
+  新增 `DescriptionStyle`（12px / `TextFaint` / Wrap）做行说明。
+- 布尔开关：`CheckBox` → `ToggleButton`（`ToggleSwitchStyle`，40×22，
+  Track 圆角 11 灰/绿 `ToggleOnBg #FF0FA47F`，Thumb 18px 白圆，
+  `TranslateTransform.X 0↔18` 0.1s 动画）。**ToggleButton 是 CheckBox 的安全替身**
+  —— 两者都有 `IsChecked`/`Checked`/`Unchecked`，类型替换代码侧零改动；
+  注意命名空间在 `System.Windows.Controls.Primitives`（`SettingsSelfCheck.cs`
+  已补 using）。
+- 滑块重绘为 `MinimalSliderStyle`（3px 灰轨 + 14px 白圆拇指，保留 `PART_Track`），
+  CSHeadshot 页三个滑块换用，数值 "100%" 同行右对齐。
+- 下拉选中项改「浅绿底 + 右侧绿色对勾」：`ComboItemStyle` 的 Grid 里
+  Bd 与对勾 Path（`Stroke=ToggleOnBg`，Data `M 0,5.5 L 4,9.5 L 10.5,1.5`）
+  作为**兄弟节点**放（对勾等装饰不能进 ContentPresenter，会破坏容器项解析链）。
+- 四个页面统一改造：删页标题（`PageTitleStyle` 已删）、「样式/圆环参数/
+  Headshot 参数/蜘蛛网参数/八卦参数」等节标题上卡外、悬空寺开关行化、
+  杂项设置两个开关 + 触发延时说明化。`<StackPanel Grid.Column="0">`
+  统一 `VerticalAlignment="Center"`（两行标签块与右控件居中对齐）。
+- 删除死样式：`PageTitleStyle` / `RowSeparator` / `CheckGlyphTemplate` / `CheckStyle`；
+  令牌删除 `NavActiveBg`（蓝块选中成历史），新增 `NavRestHoverBg` /
+  `ToggleOnBg` / `ToggleOnSoft`。⚠️ `AccentSoft` **必须保留** ——
+  `UpdateOpSelectionHighlight()` 代码侧仍 `TryFindResource("AccentSoft")`。
+
+**页面结构自查**：页1「菜单样式」的 `BasicRadialConfigGrid` → 「圆环参数」
+（外/内半径 + Description + 色值按钮与隐藏 TextBox 同格叠放）；
+页3 悬空寺的 `XuanKongSiImagePreviewBorder` **仍是 Border**（自检强转类型，
+不能跟着改 StackPanel）。
+
+### 2026-10-21 配色统一：布尔开关 / 下拉选中回主题蓝
+用户反馈「布尔开关的颜色和其他控件主题色保持一致，检查其他配色是否有类似的不一致情况一并改正」。
+- ✅ **删除绿色通道**：`ToggleOnBg`（#FF0FA47F）/ `ToggleOnSoft`（#FFE7F6F0）两个令牌删除，
+  引用处全部改回主题色族 —— 开关「开」轨 `Accent`（#FF0F6CBD Win11 蓝）、
+  下拉选中行 `AccentSoft` 浅蓝底 + `Accent` 对勾。全 XAML 零代码引用，纯样式替换。
+- ✅ **配色审计结论**（逐行扫过全部硬编码色值）：
+  - 灰阶（#E3E3E3~#FAFAFA 各级底/边/滑块轨）= 中性层次，不动；
+  - `AccentAccentHotAccentDownAccentSoft` 族 = 焦点/单选/主按钮/选中，是唯一强调色族；
+  - **`DangerGhostButton` 红色族（#FFC0382F 字 / #FFE8B4B4 边 / 三级浅红 hover）刻意保留** ——
+    「恢复所有默认设置」是破坏性操作，红=危险是语义通道，不是主题不一致；
+  - TextBox 里的 `#007AFF`/`#C0C0C0`/`#000000` 等是**配置数据默认值**（菜单高亮色/蛛网线色），
+    不是 UI 主题色，不动。
+- ⚠️ 新纪律写进 XAML 注释与项目记忆：**全窗口只保留一个强调色族（Accent 蓝）**，
+  布尔"开"/下拉选中/焦点/单选同族表达；红色仅留给危险操作。
+- 经验：改这类"跨样式语义"时先扫一遍令牌被引用的全部位置（XAML + cs）再动刀。
+
+### 2026-10-21 尺寸类动作开关语义（snap ↔ 还原）
+用户需求：涉及窗口尺寸修改的动作（左半屏、左三分之二屏等），第一次按当前逻辑触发；
+对同一个窗口再次选择同一菜单则还原窗口原来的尺寸与位置。**已随 V0.2-202610210822 构建**。
+
+- ✅ **作用范围**：10 个尺寸类动作（半屏 ×4 / 四分屏 ×4 / 三分之二屏 ×2）。
+  最小化/最大化/关闭/回到桌面不改。`WindowAction` 枚举零改动（无新动作）。
+- ✅ **接入点**：`ExecuteAction` 的 10 个 case 从直调 `Set*` 改为经
+  `ExecuteSnapToggle(action, hwnd, snap)`，snap 逻辑本体一行未动，
+  开关语义全部收在新入口里（闭包传原逻辑，避免复制分发 switch）。
+- ✅ **锚点表**：`Dictionary<(WindowAction, IntPtr HWnd), SnapAnchor>`，锁内增删查、
+  锁外动窗口。**双键 = (动作, 窗口)**——"同一个菜单"才是还原条件，
+  左半屏记左半屏的原点、三分之二屏记三分之二屏的原点，换菜单照常 snap。
+- ✅ **三个关键正确性设计**：
+  ① 存档前先 `ShowWindow(SW_RESTORE)` 再 `GetWindowRect` —— 最小化窗口的矩形是
+     (-32000,-32000) 垃圾坐标、最大化窗口是临时满屏矩形，照存还原时会跳走；
+  ② 锚点带**进程号** + `IsWindow` 双校验（`PruneDeadAnchors`）—— HWND 会被系统
+     回收复用，只比句柄会把新窗口的"第一次"误判成还原；
+  ③ 还原用**裸 SetWindowPos + 原始 WindowRect**，不走 `MoveWindowCompensated` ——
+     存/还原都是 WindowRect，原样往返恒等，叠边框补偿反而整体偏移。
+- ✅ **循环语义**：第二次触发还原并**清档** → 第三次重新 snap（与第一次同结果）。
+- ✅ **自检断言**（`--settingscheck` 新增第 9 段 `CheckSnapActionToggle`）：
+  建离屏探针小窗**直调 ExecuteAction**（不模拟键鼠），轮询等矩形异步生效
+  （snap 走 `SWP_ASYNCWINDOWPOS`），依次断言 ① 第一次移动 ② 第二次还原原矩形
+  ③ 第三次重新 snap ④ 换菜单（左三分之二屏）不误触发还原。
+  探针 snap 时会闪一下工作区，预期内（验的就是真实链路）。
+- 服务层新增 `internal static TryGetWindowRect(...)` 供自检验证往返，
+  `GetWindowThreadProcessId` P/Invoke 服务于句柄复用校验。
+
+#### 2026-10-21 修复：还原窗口状态（用户实测反馈）
+
+**bug 现象**：窗口先最大化 → 第一次触发右三分之二屏成功 → 再次触发预期恢复
+最大化，实际只回到"最大化前的普通态矩形"。
+
+**根因**：存档顺序是 `SW_RESTORE` 在前、`GetWindowRect` 在后 —— `SW_RESTORE`
+顺手把窗口从最大化打回普通态，于是"普通态矩形"被当成原始状态存档，
+**最大化标志从未被记录**，还原时只摆矩形、状态回不去。
+
+**修法**（`WindowManagementService.ExecuteSnapToggle`）：
+- `SnapAnchor` 增加 `ShowCmd` / `RestoreToMaximized` 两字段；
+- 存档顺序改为 **`GetWindowPlacement` 录状态 → `SW_RESTORE` → `GetWindowRect` 录矩形**。
+  ⚠️ placement 必须在 SW_RESTORE **之前**取 —— `SW_RESTORE` 会把 showCmd
+  从最大化/最小化改写成普通态，之后再取就录不到原状态（bug 的直接成因）；
+- 还原顺序为 **先 `SetWindowPos` 摆矩形，再按原状态补 `ShowWindow`**：
+  原状态最大化 → `SW_MAXIMIZE`；普通最小化 → `SW_SHOWMINIMIZED`；
+  **反序不行** —— 先切最大化会把刚摆的矩形覆盖成工作区矩形；
+- 最小化前是最大化的窗口（showCmd=SW_SHOWMINIMIZED 且 flags 带
+  `WPF_RESTORETOMAXIMIZED`）同样判为最大化还原，与"回到操作前状态"一致。
+- 自检 `CheckSnapActionToggle` 追加用例：探针窗先 `WindowState=Maximized`，
+  等 `IsZoomed` 生效后做第二次 snap 往返，断言还原后 `IsZoomed` 仍为 true
+  （断言判**状态**而非矩形 —— 最大化态下 GetWindowRect 本就是临时满屏矩形）；
+  新增 `WaitForZoomed` 轮询辅助 + `internal static IsWindowZoomed`。
+
+### 2026-10-21 新增动作「窗口居中」
+
+- 需求：动作组新增「窗口居中」—— 触发后**不改尺寸**，只把窗口放到当前桌面
+  （工作区）中心；再次触发还原原位置。
+- **枚举纪律**：`WindowAction.Center = 16` 追加在 `CloseWindow = 15` 之后
+  （序号持久化进 config.json，空号 13/14 仍不回收）。
+- **实现**（`WindowManagementService`）：
+  - `case WindowAction.Center: ExecuteSnapToggle(action, hwnd, CenterWindow);`
+    —— 开关语义复用锚点表，"再次触发还原位置"对纯位移动作天然成立
+    （原矩形 = 第一次触发前的位置，含尺寸/状态一起还原）；
+  - `CenterWindow`：取当前 `GetWindowRect` 尺寸（宽高原样）→ `GetWorkArea`
+    拿当前显示器工作区 → 目标 = 工作区中心 − 半窗 → `MoveWindowCompensated`。
+    ① 工作区用 `MonitorFromWindow` 物理像素（**不是** `SystemParameters.WorkArea`
+    的 DIP，Per-Monitor V2 非 100% 缩放下错位）；
+    ② 可见部分居中靠 `MoveWindowCompensated` 的不可见边框补偿（与 10 个 snap
+    动作同一通道，不另起炉灶）；
+    ③ 最大化态由 `ExecuteSnapToggle` 存档前的 `SW_RESTORE` 保证 —— 本方法拿到的
+    已是正常态矩形，宽高是用户原尺寸。
+- **UI**：`ActionCatalog` 加 `(Center, "窗口居中", ActionGroupWindowState)` ——
+  归入「窗口状态」组（该组 = 不改尺寸的动作集合：最小化/最大化/回到桌面/居中），
+  且插在「关闭窗口」**之前**保住"破坏性动作守组末"的既定原则。
+- **自检**：`CheckSnapActionToggle` 追加 Center 用例（基准取当前矩形，
+  不是方法开头的 l0/t0 —— 前面用例走完探针在 snap 位）：
+  位置变 + 宽高零变化 + 与当前工作区中心偏差 ≤8px（边框补偿非对称舍入的容差，
+  抓的是参照系错误这类大偏差）+ 再次触发还原；服务类新增
+  `internal TryGetWorkAreaOf` 包装供其取工作区。
+- **FontSelfCheck**：字符样本补「居中」二字（此前无任何一处覆盖）。
+
+### 系统分屏修饰键（2026-10-21）
+
+用户需求：触发菜单时如果同时按住某个修饰键（设置界面可配，六个选项，默认左 Alt），
+且即将触发的动作是左半屏 / 左上四分之一屏这类与 Windows 自带分屏拟合的选择时，
+改为触发对应的系统分屏动作。
+
+**方案选型结论**：系统分屏（Snap）**没有公开 API / COM 接口**，是 Explorer 内部
+行为。候选路径全部排除后只剩模拟输入：UI Automation 操控 Win11 snap layouts
+flyout 实际不可行（自定义渲染，UIA 树不可靠访问）；WinLoop 自己算矩形拿不到
+原生 Snap Groups / 分屏后 Win+方向继续调整等特性；给 shell 发窗口消息没有对应
+命令码。故采用 `Win+方向键` 模拟（`keybd_event`，与既有 ShowDesktop 的 Win+D
+同一手法）。
+
+- **映射表** `_systemSnapMaps`（纯查表，`TryGetSystemSnapKeys` internal 供自检）：
+  左半屏=Win+←、右半屏=Win+→；四象限=**同方向连按**（系统循环：左半→左上→
+  左下→左半，故左上=左×2、左下=左×3，右同；Win10/Win11 通用公共子集），
+  连按间隔 110ms（经验下限，真人手动约 150-300ms，再低有合并风险）。
+  不用「Win+← 后 Win+↑」路径：那种键序一旦第一次按键时序失败，Win+↑ 会把
+  普通态窗口**最大化**（灾难性失败模式）；同键重复最坏只停在半屏（温和失败）。
+- **守卫**：`GetForegroundWindow() != hwnd` 时放行走原逻辑 —— Win+方向键作用于
+  发键时的前台窗口。刻意不 SetForegroundWindow 抢焦点（前台锁会拒，且用户按住
+  修饰键时就没打算换焦点）。
+- **生死线细节**：用户按住修饰键**选中**菜单的瞬间该键仍在按下态，直接发组合
+  会变性：`Alt+Win+←` 不被 shell 认（Alt 改变快捷键语义）、`Shift+Win+←` 是
+  "移到副显示器"（彻底跑偏）。`ExecuteSystemSnap` 因此先 `keybd_event(MOD,
+  KEYUP)` 释放，组合发完在 **finally** 里按回（保证异常路径也恢复）。
+- **键态检测**：`GetAsyncKeyState` 的 0x8000 位（物理键态），不用钩子队列 ——
+  动作执行发生在菜单选中那一刻，钩子事件时机对不上；且异步键态不受焦点归属影响。
+- **配置链路**：`AppConfig.SystemSnapModifier`（`SnapModifierKey` 枚举，
+  非 WindowAction 式序号持久化 —— 不追加在 WindowAction 里，因为这不是动作）；
+  DTO 可空枚举 `SystemSnapModifier?`，老配置 null → 默认 LeftAlt；
+  `App.UpdateSystemSnapModifier` 即推运行态（下拉离散值即选即生效）；
+  回填 / 保存在 SettingsWindow 的 PopulateUIFromConfig / SaveConfig。
+- **UI**：操作配置页 `OpLayoutGrid` 加 Grid.Row=1 通栏行（三栏与引线层全部
+  显式 `Grid.Row="0"`——加行后不显式会全落进默认 Row=0 挤在一行）。
+  放这一页而非杂项页：它是"动作触发时的改道开关"，与"每扇区配什么分屏动作"
+  是同一个决策面。不插进左右两列以避免破坏 8 行的行距 / 引线锚点计算。
+- **自检**：`CheckSystemSnapMapping` 只验两张纯表（6 入表 + 9 反面断言断言
+  TryGetSystemSnapKeys；反射 `ModifierVkOf` 验 6 个修饰键 VK 独立不撞车）。
+  **刻意不发真实按键** —— 自检跑在用户桌面上，发 Win+← 会把当时的前台窗口
+  snap 掉，是破坏不是测试；键序/时序正确性靠推导注释 + 用户实测。
+- **FontSelfCheck**：字符样本补「系统分屏修饰键」行文案用字。
+
+### 设置项说明统一改提示图标（2026-10-21）
+
+用户要求：设置项的补充说明默认不显示，改为标签旁的提示图标，悬停出说明。
+覆盖 10 处行内 `DescriptionStyle`（菜单样式页 5 处参数、悬空寺启用行、杂项设置 3 行、
+操作配置页的修饰键行）。
+
+- **`HintIcon` 样式**（`TargetType="ContentControl"`，资源区）——模板内画 ⓘ：
+  圆与 i 的竖线合并为**一个 `GeometryGroup`**，点单独一个 `Ellipse`。
+  使用处一行：`<ContentControl Style="{StaticResource HintIcon}" ToolTip="..."/>`。
+- **必须纯矢量、不能用字符图标**：项目用内嵌中文字体，Segoe MDL2 / Fluent 图标
+  字形不在样本覆盖内，字符图标会渲染成豆腐块。全站图标本就是 Path 风格，一致。
+- **三个实现坑**（都在样式注释里写明）：
+  ① 模板根 `Grid` 必须 `Background="Transparent"` —— 纯 Shape 的空白处不参与
+     命中测试，否则指针从图标中间穿过不出提示；
+  ② **绝对不要用零宽 Path 画竖线**（旧版做法）：宽 0 元素的对齐依赖
+     Stretch/DesiredSize 的隐式行为，会偏半像素；更糟的是**点与竖线的间距算错
+     就会糊成一根竖条**（旧版实际间距是 -0.1px 重叠，看起来完全不像 i）——新版
+     把圆+竖线并进一个 GeometryGroup（绝对坐标、无零宽元素），点与竖线间留 2px；
+  ③ `Stretch="None"` + 中心对齐：几何按自身 bounds 布局，圆心才落在 15×15 正中。
+- **悬停加深**（Faint → Sub）是发现性设计：15px 浅灰小图标不加深，用户根本看不出
+  那儿能悬停。
+- **ToolTip 排版**：全窗口隐式 `TargetType="ToolTip"` 样式统一 `MaxWidth=340` +
+  `ContentTemplate` 里 `TextBlock TextWrapping=Wrap`（默认不换行会把长说明拉成
+  一条横贯屏幕的长条）；`ToolTipService.ShowDuration=30000`（默认 5s 读不完）。
+- `DescriptionStyle` 保留定义但设置行已无引用（`StaticResource` 计数 0），留给
+  非设置项场景（整段区块说明）。
+- 自检兼容：`CheckOperationConfigLayout` 的「行内不得残留单位文字」反向断言
+  （`逻辑像素` / `@100%` / 单独 `%`）因此彻底满足；ToolTip 未展开时不在可视树，
+  不会被该断言误伤。
 
 ### V0.1 (2025-12 ~ 2026-01)
 - ✅ 完整设置窗口（菜单样式、操作配置、杂项设置）

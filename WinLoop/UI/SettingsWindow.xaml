@@ -28,9 +28,18 @@
 
         <!-- 表单行的分隔线：PixPin 那种"整齐感"主要来自这条线 -->
         <SolidColorBrush x:Key="RowLine"       Color="#FFEDEDED"/>
-        <!-- 导航选中态实心块 -->
-        <SolidColorBrush x:Key="NavActiveBg"   Color="#FF0F6CBD"/>
+        <!-- 导航选中态实心块（2026-10-20 起选中改浅灰药丸，蓝块令牌 NavActiveBg 已删；
+             需要"实心蓝块"语境时直接用 Accent / AccentHot / AccentDown 三件套） -->
         <SolidColorBrush x:Key="NavHoverBg"    Color="#FFEFEFEF"/>
+        <!-- 导航**未选中**的悬停色，比 NavHoverBg 浅一档。
+             选中药丸（#EFEFEF）必须比悬停（#F5F5F5）更深，层级才分得清。 -->
+        <SolidColorBrush x:Key="NavRestHoverBg" Color="#FFF5F5F5"/>
+
+        <!-- ⚠️ 2026-10-21：原 ToggleOnBg（#FF0FA47F 绿）/ ToggleOnSoft（#FFE7F6F0 浅绿）
+             两个令牌已删除。改版时参照 WorkBuddy 参考图用过"绿=开/选中"通道，
+             与全站 Accent 蓝（焦点/单选/主按钮/下拉选中）并存；用户反馈开关颜色
+             要和其它控件主题色一致，故删令牌、引用处全部改回 Accent / AccentSoft。
+             不要再引"绿=布尔态"这套语言 —— 全窗口只保留一个强调色族。 -->
 
         <!-- 描边：卡片 / 分隔线 / 输入框 -->
         <SolidColorBrush x:Key="LineEdge"       Color="#FFE0E0E0"/>
@@ -73,7 +82,12 @@
         <sys:Double x:Key="FormFieldW">100</sys:Double>
         <sys:Double x:Key="FormRowH">32</sys:Double>
         <sys:Double x:Key="FormRowPadV">8</sys:Double>
-        <GridLength x:Key="FormLabelCol">108</GridLength>
+        <!-- 标签列宽 108→240（2026-10-20 参考 WorkBuddy 设置窗口改版）：
+             参考图的行是「左标签（可带一行说明小字）+ 右对齐控件」两段式，
+             标签列窄了就放不下说明文字。240 = 标签最长 5 字 + 说明文字两行余量。
+             ⚠️ 这同时意味着**控件一律右对齐**（参考图里下拉/开关都贴卡片右缘），
+             不再"贴着标签排"—— 空白的中间带正是参考图的呼吸感来源。 -->
+        <GridLength x:Key="FormLabelCol">240</GridLength>
         <!-- 行流模板：标签固定宽 → 控件列 → 剩余（说明文字/弹性空间） -->
         <GridLength x:Key="FormFieldCol">Auto</GridLength>
 
@@ -89,13 +103,124 @@
         <!-- 表单行标签：左对齐，垂直居中于行内。行间距由行的 Padding 控制，
              这里不再自带上下 Margin（否则行高会失控）。
              Foreground 用 TextMain 而非 TextSub —— 标签是行的"主信息"，
-             原先用次级灰导致整行视觉焦点落在右侧输入框上，重心右偏。 -->
+             原先用次级灰导致整行视觉焦点落在右侧输入框上，重心右偏。
+             Medium 字重（2026-10-20 参考图改版）：参考图行标签是半粗的，
+             与下面 12px 的说明小字拉开层级。 -->
         <Style x:Key="LabelStyle" TargetType="TextBlock">
             <Setter Property="Margin" Value="0,0,10,0"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="HorizontalAlignment" Value="Left"/>
             <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="Medium"/>
             <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
+        </Style>
+
+        <!-- 行内说明小字：跟在 Label 下方，补充"这个数字是什么单位/改了会怎样"。
+             参考图里它是 12px 灰字，宽度跟标签列同宽，长了自然换行。
+             用法：把标签列放进一个两行的 StackPanel 里（Label + Description），
+             行高会自动撑开，不用给 SettingRow 加额外高度。
+             ⚠️ 2026-10-21 起：**设置行的补充说明改用下方的 HintIcon 提示图标**，
+             不再用这个样式铺在行内（用户要求：描述默认不显示、悬停才出）。
+             本样式仅保留给非设置项的场景（如整段区块的说明文字）。 -->
+        <Style x:Key="DescriptionStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="LineHeight" Value="17"/>
+            <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+            <Setter Property="Margin" Value="0,2,0,0"/>
+        </Style>
+
+        <!-- 提示图标（ⓘ）：设置在标签右侧，默认什么都不显示，**点击图标**才弹出说明。
+             <para>
+             **为什么不用字符图标**：项目内嵌的是中文字体，Segoe MDL2 / Fluent 图标
+             字形不在样本覆盖内，用一个方框字符当图标会显示成豆腐块。纯矢量绘制
+             与全站 Path 图标风格一致，且永远不受字体影响。
+             </para>
+             <para>
+             **2026-10-21 重做（用户反馈"图标样式有问题"）**：旧版是
+             「Ellipse 描边 + 零宽 Path 画竖线 + 独立 Ellipse 画点」三个元素叠，
+             两个问题：① 零宽元素的对齐依赖 Stretch/DesiredSize 的隐式行为，
+             宽 0 的 Path 居中时会偏半像素、线看起来发虚；② 点与竖线间距为 0，
+             糊成一根竖条，不像 i。新版把**圆与竖线合并进一个 GeometryGroup**
+             （绝对坐标、没有任何零宽元素），点单独一个 Ellipse 并留 1.9px 间隙。
+             </para>
+             <para>
+             **2026-10-21 改为点击触发（用户要求）**：宿主从 ContentControl 换成
+             Button —— 点击行为要能挂事件，而 ControlTemplate 里是挂不了代码后置
+             处理器的。用 `EventSetter` 把全窗口所有提示图标统一接到
+             `HintIcon_Click`，使用处照旧一行、不重复挂事件。
+             两个关键点：
+             ① `ToolTipService.IsEnabled = False` —— 必须禁掉 WPF 的悬停自动弹出，
+                否则"点击展示"会变成"悬停也弹"，和需求相悖。文案仍存在
+                `ToolTip` 属性里当数据源，由处理器读出来手动开一个 ToolTip。
+             ② `Focusable = False` —— Button 默认抢焦点，点一下图标会把滚动
+                跳去它（BringIntoView），设置页会莫名滚动。
+             </para>
+             <para>
+             **用法**：`<Button Style="{StaticResource HintIcon}" ToolTip="说明"/>`
+             —— ToolTip 属性在这里纯当字符串仓库用。模板根的 Grid 必须
+             `Background="Transparent"`，否则图标中间是"洞"、点不到。
+             </para> -->
+        <Style x:Key="HintIcon" TargetType="Button">
+            <Setter Property="Width" Value="15"/>
+            <Setter Property="Height" Value="15"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Focusable" Value="False"/>
+            <Setter Property="ToolTipService.IsEnabled" Value="False"/>
+            <EventSetter Event="Click" Handler="HintIcon_Click"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid Background="Transparent" Cursor="Hand">
+                            <!-- 圆 + i 的竖线：一个 Path 画完。Stretch=None 让几何
+                                 按自身 bounds 布局，外层中心对齐即视觉居中。 -->
+                            <Path x:Name="Ring"
+                                  Stroke="{StaticResource TextFaint}" StrokeThickness="1.2"
+                                  Stretch="None"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                <Path.Data>
+                                    <GeometryGroup>
+                                        <EllipseGeometry Center="7.5,7.5" RadiusX="6.4" RadiusY="6.4"/>
+                                        <LineGeometry StartPoint="7.5,7.7" EndPoint="7.5,11.2"/>
+                                    </GeometryGroup>
+                                </Path.Data>
+                            </Path>
+                            <!-- i 的点：与竖线留 1.9px 间隙，否则两者糊成一根竖条 -->
+                            <Ellipse x:Name="Dot" Width="1.9" Height="1.9"
+                                     Fill="{StaticResource TextFaint}"
+                                     HorizontalAlignment="Center" VerticalAlignment="Top"
+                                     Margin="0,3.8,0,0"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <!-- 悬停/按下加深：15px 的浅灰小图标不给反馈的话，
+                                 用户根本看不出来这儿能点（发现性比美观更重要）。 -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource TextSub}"/>
+                                <Setter TargetName="Dot" Property="Fill" Value="{StaticResource TextSub}"/>
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Ring" Property="Stroke" Value="{StaticResource TextMain}"/>
+                                <Setter TargetName="Dot" Property="Fill" Value="{StaticResource TextMain}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ToolTip 统一排版（隐式样式，全窗口生效）：提示文案普遍偏长，
+             默认不换行会拉成一条横贯屏幕的长条。MaxWidth 卡住后交给换行。
+             不覆盖 Template —— 只是给默认模板的 ContentPresenter 加上换行模板。 -->
+        <Style TargetType="ToolTip">
+            <Setter Property="MaxWidth" Value="340"/>
+            <Setter Property="ContentTemplate">
+                <Setter.Value>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" LineHeight="18"/>
+                    </DataTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- 卡片内的小标题（"尺寸" / "配色" 这类分组名） -->
@@ -120,30 +245,21 @@
             <Setter Property="Margin" Value="10,0,0,0"/>
         </Style>
 
-        <!-- 独立的页面标题（每页顶部一行，位于白卡**之外**，参照 PixPin）。
-             15→17：页标题是这一屏最大的字，和 14 的正文拉开一级落差，
-             层级才立得住（原先 15 vs 13 只差 2px，几乎看不出主次）。 -->
-        <Style x:Key="PageTitleStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="17"/>
-            <Setter Property="FontWeight" Value="Medium"/>
-            <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
-            <Setter Property="Margin" Value="0,0,0,16"/>
-        </Style>
+        <!-- ⚠️ PageTitleStyle 已删除（2026-10-20 参考图改版）：参考图里
+             页面身份由左侧导航承担，内容区第一屏直接是分组标题（GroupHeaderStyle），
+             不再有一个 17px 的大页标题。分组标题就是这一屏层级最高的字。 -->
 
         <!-- ==================== 行流 ====================
-             重构核心：整页由若干等高"行"堆叠而成，行与行之间夹一条 1px 淡分割线。
-             PixPin 的整齐感就来自这套节奏 —— 整齐 > 花哨。
-             用法：把 SettingRow 当 Grid 用，行内自加列定义。 -->
+             整页由若干等高"行"堆叠而成。
+             ⚠️ 2026-10-20 改版：行间**不再夹分割线**（原 RowSeparator 已删）。
+             参照 WorkBuddy 设置窗口：卡内的分隔靠"卡片边界 + 行距"表达，
+             再划线会把呼吸感切碎。整齐感改由统一列宽（FormLabelCol）与
+             控件右对齐保证。
+             用法：把 SettingRow 当 Grid 用，行内自加列定义；
+             标签列固定 FormLabelCol(240)，控件列 '*' 且控件 HorizontalAlignment=Right。 -->
         <Style x:Key="SettingRow" TargetType="Grid">
             <Setter Property="MinHeight" Value="{StaticResource FormRowH}"/>
             <Setter Property="Margin" Value="0,8"/>
-        </Style>
-
-        <!-- 行间分割线：左右各内缩 1px，避免和卡片边框贴死 -->
-        <Style x:Key="RowSeparator" TargetType="Border">
-            <Setter Property="Height" Value="1"/>
-            <Setter Property="Background" Value="{StaticResource RowLine}"/>
-            <Setter Property="SnapsToDevicePixels" Value="True"/>
         </Style>
 
         <!-- ==================== 输入控件 ====================
@@ -200,17 +316,334 @@
             <Setter Property="HorizontalAlignment" Value="Stretch"/>
         </Style>
 
+        <!-- ==================== 下拉框：弹层滚动条 ====================
+             Aero 默认的滚动条是 17px 宽、带上下箭头按钮的灰槽 —— 塞进圆角白底弹层里
+             非常突兀（操作配置页 18 行一定会出滚动条）。这里换成 7px 圆角细拇指条，
+             去掉箭头与灰槽，只在悬停时加深。 -->
+        <Style x:Key="ComboScrollBarStyle" TargetType="ScrollBar">
+            <Setter Property="Width" Value="7"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ScrollBar">
+                        <Grid Background="Transparent" Margin="1,2,1,2">
+                            <Track x:Name="PART_Track" IsDirectionReversed="True">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageUpCommand" Focusable="False" Opacity="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border x:Name="ThumbBd" Background="#FFD6D6D6" CornerRadius="3"/>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="ThumbBd" Property="Background" Value="#FFB6B6B6"/>
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="ScrollBar.PageDownCommand" Focusable="False" Opacity="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ==================== 下拉框的条目模板 ====================
+
+             ⚠️ **这里取代了原先的 `DisplayMemberPath="Label"`**，不是顺手美化，是修 bug。
+             ComboBox 收起态显示的内容由 `SelectionBoxItem` + `SelectionBoxItemTemplate`
+             决定；而 **`DisplayMemberPath` 不会参与生成那份模板** ——
+             只设 `DisplayMemberPath` 时 `SelectionBoxItemTemplate` 恒为 null，
+             收起态的 ContentPresenter 只能把数据对象调 `ToString()`，
+             于是框里显示的是 **`WinLoop.UI.ActionOption`** 而不是"最小化窗口"。
+             （弹层里的行是另一条链路：DisplayMemberPath 会作用于容器项，所以
+              弹层看着一直是好的 —— 这个 bug 只在收起态暴露，很难从截图看出来。）
+
+             实测（独立 WPF 探针对照三种配置）：
+               · 只 DisplayMemberPath → SelectionBoxItemTemplate = null → 收起态显示类型名
+               · 只 ItemTemplate       → SelectionBoxItemTemplate = set  → 收起态显示中文标签
+               · 两者同时设            → 直接抛 InvalidOperationException，不能用
+
+             所以三个下拉框（8 个操作框 + 悬空寺触发键 / 内容类型）都改用这个模板，
+             由代码侧设 `combo.ItemTemplate`（见 InitializeActionCombos /
+             InitializeXuanKongSiControls）。组头行仍显示自己的 Label，
+             它的"不可选 + 小灰字"由 OpActionItemStyle 的 DataTrigger 负责，与此模板无关。 -->
+        <DataTemplate x:Key="ComboItemLabelTemplate">
+            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis"/>
+        </DataTemplate>
+
+        <!-- 下拉项。悬停用 NavHoverBg、选中用 AccentSoft 浅蓝底 + 右侧 Accent 对勾，
+             圆角 5。（2026-10-21 起由参考图的"浅绿底 + 绿对勾"改回主题蓝族：
+             选中语言与单选勾/焦点/开关"开"色统一，全窗口只有一个强调色。）
+             ⚠️ 对勾只能作为 ContentPresenter 的**兄弟节点**放在 Grid 里，
+             不许塞进 ContentPresenter 内、更不许给 ContentPresenter 绑
+             Content/ContentTemplate（见下方警告，破坏容器项解析链会显示 ToString()）。 -->
+        <Style x:Key="ComboItemStyle" TargetType="ComboBoxItem">
+            <Setter Property="Padding" Value="9,4"/>
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
+            <Setter Property="SnapsToDevicePixels" Value="True"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBoxItem">
+                        <Grid>
+                            <Border x:Name="Bd" CornerRadius="5" Background="Transparent"
+                                    Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                                <!-- ⚠️ 这里**只能给布局属性**，不许写
+                                     Content="{TemplateBinding Content}"
+                                     ContentTemplate="{TemplateBinding ContentTemplate}"。
+                                     一旦显式赋值，ContentPresenter 就退化成"普通内容宿主"，
+                                     不再走"容器项"那条解析链，弹层里的文字会退回 ToString()
+                                     （曾经把列表显示成 WinLoop.UI.ActionOption 就是这么来的）。
+                                     默认 Aero 的 ComboBoxItem 模板同样只写对齐方式，这是有原因的。 -->
+                                <ContentPresenter VerticalAlignment="Center"
+                                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}"/>
+                            </Border>
+                            <!-- 选中对勾：只有 IsSelected 时可见，颜色走 Accent（主题蓝）。
+                                 两侧 Padding 与原 ContentPresenter 对齐，不顶到弹层右缘。 -->
+                            <Path x:Name="Check" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                  Margin="0,0,9,0" Width="12" Height="12" Stretch="Uniform"
+                                  Visibility="Collapsed"
+                                  Stroke="{StaticResource Accent}" StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  StrokeLineJoin="Round"
+                                  Data="M 0,5.5 L 4,9.5 L 10.5,1.5"/>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <!-- IsHighlighted 同时覆盖鼠标悬停与键盘上下键移动，
+                                 比 IsMouseOver 更准（键盘选中时也要有反馈）。 -->
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource NavHoverBg}"/>
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource AccentSoft}"/>
+                                <Setter TargetName="Check" Property="Visibility" Value="Visible"/>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ⚠️ 原先这里写了 Margin="0,6"。行距现在统一由 SettingRow 的 Margin 控制，
              样式里再带 Margin 会让"控件高度 + 双重外边距"叠加，
              在行高较紧的地方（如操作配置页）直接把下方提示文字顶到重叠。
-             行内一律不给控件加外边距。 -->
+             行内一律不给控件加外边距。
+
+             2026-10-20：整体换掉系统默认模板。原样是 Aero 的方角 + 系统蓝高亮 + 3D 箭头，
+             与本站的白卡扁平风格冲突。现在收起态对齐 InputStyle（1px 边框 / 圆角 5 /
+             悬停边加深 + NavHoverBg 灰底填充 / 聚焦变蓝并加粗到 1.4），
+             弹层改成白底圆角浮层 + 阴影。悬停填充色刻意与 InputStyle 不同
+             （输入框只有边变深）：下拉框是点击目标，需要"可点"的 affordance。
+
+             ⚠️ 三处不能省，删了会坏：
+               ① 弹层 Popup 必须叫 **PART_Popup** —— ComboBox 靠这个名字做键盘导航与定位；
+               ② ToggleButton 必须铺满整块、Focusable=False（不吃 Tab 键）、
+                  且 IsChecked 双向绑定 IsDropDownOpen，否则点击不展开；
+               ③ 收起态显示的内容取自 **SelectionBoxItem**（不是 Items[0]），
+                  否则"未选中"时会把第一项当成当前值显示 —— 会直接破坏
+                  「8 个下拉框按配置回填」这条自检。 -->
         <Style x:Key="ComboStyle" TargetType="ComboBox">
             <Setter Property="Height" Value="{StaticResource FormRowH}"/>
             <Setter Property="VerticalAlignment" Value="Center"/>
             <Setter Property="MinWidth" Value="120"/>
             <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="HorizontalContentAlignment" Value="Left"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
+            <Setter Property="Background" Value="{StaticResource CardBg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource InputEdge}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="9,0"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <!-- 光标也走 Hand：整块框（含透明 ToggleButton 覆盖层）继承这个光标，
+                 "点我展开"不必靠猜。与按钮/导航同一套交互语汇。 -->
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ComboItemStyle}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ComboBox">
+                        <Grid>
+                            <Border x:Name="Bd" CornerRadius="5"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    SnapsToDevicePixels="True">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="Auto"/>
+                                    </Grid.ColumnDefinitions>
+
+                                    <ContentPresenter Grid.Column="0"
+                                                      Margin="{TemplateBinding Padding}"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"
+                                                      IsHitTestVisible="False"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"/>
+
+                                    <Path Grid.Column="1" x:Name="Arrow"
+                                          Data="M0,0 L5,6 L10,0"
+                                          Stroke="{StaticResource TextFaint}"
+                                          StrokeThickness="1.6"
+                                          StrokeStartLineCap="Round"
+                                          StrokeEndLineCap="Round"
+                                          Margin="0,0,10,0"
+                                          VerticalAlignment="Center"
+                                          RenderTransformOrigin="0.5,0.5">
+                                        <Path.RenderTransform>
+                                            <RotateTransform Angle="0"/>
+                                        </Path.RenderTransform>
+                                    </Path>
+                                </Grid>
+                            </Border>
+
+                            <!-- 整块可点：透明 ToggleButton 铺在最上层。
+                                 Focusable=False 很关键 —— 否则 Tab 会多停一站，
+                                 而这一页的 Tab 顺序被焦点联动（下拉框↔扇区高亮）依赖。 -->
+                            <ToggleButton x:Name="DropToggle" Focusable="False" ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                <ToggleButton.Template>
+                                    <ControlTemplate TargetType="ToggleButton">
+                                        <Border Background="Transparent"/>
+                                    </ControlTemplate>
+                                </ToggleButton.Template>
+                            </ToggleButton>
+
+                            <Popup x:Name="PART_Popup"
+                                   Placement="Bottom"
+                                   VerticalOffset="4"
+                                   AllowsTransparency="True"
+                                   PopupAnimation="Fade"
+                                   Focusable="False"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}">
+                                <!-- 右侧/下方留 10px：给投影留出绘制空间，否则阴影会被弹层边界裁掉。
+                                     ⚠️ 投影**不能直接加在承载内容的 Border 上** —— Effect 是整棵子树的
+                                     离屏渲染，加在上面会让弹层里的文字一起变糊。
+                                     这里拆成"后面一层只负责投影、前面一层只负责描边与内容"。 -->
+                                <Grid MinWidth="{Binding ActualWidth, RelativeSource={RelativeSource TemplatedParent}}"
+                                      Margin="0,0,10,10">
+                                    <Border CornerRadius="9" Background="{StaticResource CardBg}" Margin="1">
+                                        <Border.Effect>
+                                            <!-- 0.14→0.16、Depth 2→3：白卡上的白浮层，
+                                                 原参数投影太弱，看着像"贴在卡上"而不是"浮在卡上"。
+                                                 再深就会发脏，这个量是够用又不腻的上限。 -->
+                                            <DropShadowEffect BlurRadius="16" ShadowDepth="3" Direction="270"
+                                                              Opacity="0.16" Color="#FF000000"/>
+                                        </Border.Effect>
+                                    </Border>
+
+                                    <!-- ⚠️ 左右内边距必须是 **0**，不能是 4。
+                                         弹层与收起态合并后左缘正对框左缘，文字起点要一致：
+                                           收起态 = 1(边框) + 9(ComboBox 的 Padding)
+                                           弹层   = 1(边框) + 这里 + 9(ComboBoxItem 的 Padding)
+                                         这里给 4 就会比收起态多 4px，看着文字"缩进去一截"。
+                                         上下留 4 是给首尾项透气，与文字对齐无关。 -->
+                                    <Border x:Name="DropDownBd"
+                                            Background="{StaticResource CardBg}"
+                                            BorderBrush="{StaticResource LineEdge}"
+                                            BorderThickness="1"
+                                            CornerRadius="9"
+                                            Padding="0,4"
+                                            SnapsToDevicePixels="True">
+                                        <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                                      VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled">
+                                            <ScrollViewer.Resources>
+                                                <!-- 弹层是独立视觉树，作用域内的隐式样式才管得住它 -->
+                                                <Style TargetType="ScrollBar" BasedOn="{StaticResource ComboScrollBarStyle}"/>
+                                            </ScrollViewer.Resources>
+                                            <ItemsPresenter KeyboardNavigation.DirectionalNavigation="Contained"/>
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
+                            </Popup>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <!-- 悬停：边框加深 + 整块浅灰填充。
+                                 填充色复用 NavHoverBg（导航项 / 弹层条目 / 次级按钮
+                                 共用的 hover 令牌），不新造灰色 —— 全站 hover 语汇统一。
+                                 只加深边框这一条反馈不够看：输入框靠"边框变深"就够，
+                                 但 ComboBox 本质是点击目标（更像按钮），
+                                 多一条背景通道，"可点"的 affordance 才立得住。 -->
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InputEdgeHot}"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource NavHoverBg}"/>
+                                <Setter TargetName="Arrow" Property="Stroke" Value="{StaticResource TextSub}"/>
+                            </Trigger>
+                            <!-- 聚焦：与 InputStyle 完全同构 —— 边框变蓝 + 边框 1→1.4 加粗。
+                                 少了"加粗"这一笔，聚焦态和悬停态只剩深浅差别，
+                                 分不清"光标在里面"还是"鼠标飘过"。
+                                 触发器顺序即优先级：聚焦在悬停之后声明，
+                                 两者同时命中时蓝色 + 1.4 覆盖悬停的灰边。 -->
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InputEdgeOn}"/>
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="1.4"/>
+                            </Trigger>
+                            <!-- 展开态是复合信号：蓝粗边 + 蓝箭头 + 箭头翻转。
+                                 背景重回白底：弹层打开时收起态是"锚点"，
+                                 蓝边蓝箭头已经说明它是活跃控件，
+                                 再带一层悬停灰会和弹层里的高亮行糊成一团。
+                                 放在最后声明，同时覆盖上面两条的边框/背景。 -->
+                            <Trigger Property="IsDropDownOpen" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InputEdgeOn}"/>
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="1.4"/>
+                                <Setter TargetName="Bd" Property="Background" Value="{StaticResource CardBg}"/>
+                                <Setter TargetName="Arrow" Property="Stroke" Value="{StaticResource Accent}"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <!-- 动画打在有名字的 Path 上、走 RenderTransform.Angle 路径，
+                                                 不去 TargetName 那个 RotateTransform ——
+                                                 Freezable 在模板里按名字做动画目标有坑，
+                                                 而 Path 是 FrameworkElement，一定在 namescope 里。 -->
+                                            <DoubleAnimation Storyboard.TargetName="Arrow"
+                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                             To="180" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Arrow"
+                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                                             To="0" Duration="0:0:0.15"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.55"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
         </Style>
 
         <!-- ==================== 容器 ====================
@@ -228,14 +661,15 @@
             <Setter Property="Margin" Value="0,0,0,12"/>
         </Style>
 
-        <!-- 页内小分组标题：卡内换组时用。
-             字号与 LabelStyle 同为 14，靠 SemiBold + 上下文留白做区分；
-             底部留白 2→4，让它和紧跟其后的分割线之间透口气，不再贴死。 -->
+        <!-- 分组标题 = 卡片**上方**的一行节标题（2026-10-20 参考图改版，
+             参照 WorkBuddy 设置窗口的「常规 / 权限」）：标题不在卡片里，
+             卡片只装行。页面顶上的第一个标题在用法处覆盖为 0,0,0,8。
+             字号与 LabelStyle 同为 14，靠 Medium + 上下文留白做区分。 -->
         <Style x:Key="GroupHeaderStyle" TargetType="TextBlock">
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="FontWeight" Value="Medium"/>
             <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
-            <Setter Property="Margin" Value="0,4,0,4"/>
+            <Setter Property="Margin" Value="0,16,0,8"/>
         </Style>
 
         <!-- ==================== 操作配置页：选区行 ====================
@@ -295,6 +729,152 @@
             <Setter Property="SnapsToDevicePixels" Value="True"/>
         </Style>
 
+        <!-- 动作下拉框里的每一行。**动作行与组头行共用 ComboItemStyle**，组头只多一条 DataTrigger。
+             组头行要同时满足三件事，缺一条就会被选中并写进配置：
+               ① IsEnabled=False    → 键盘上下键整行跳过；
+               ② IsHitTestVisible=False → 鼠标点不中（**不能省**：只设 IsEnabled 时
+                  单击仍会把组头选成当前值）；
+               ③ Template 必须换掉   → 默认项模板里的悬停/选中高亮会让组头看起来"可以点"，
+                  与"这是标题"的语义冲突；换掉后顺便给它独立的间距与字号。
+             组头不做色块底：弹层是圆角白底，再加一条灰底色带会显得脏，
+             靠"小一号 + 灰字 + 上方留白"分段已经够了。 -->
+        <Style x:Key="OpActionItemStyle" TargetType="ComboBoxItem" BasedOn="{StaticResource ComboItemStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                    <Setter Property="IsEnabled" Value="False"/>
+                    <Setter Property="IsHitTestVisible" Value="False"/>
+                    <Setter Property="Focusable" Value="False"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ComboBoxItem">
+                                <Border Background="Transparent" Padding="9,8,9,2" SnapsToDevicePixels="True">
+                                    <TextBlock Text="{Binding Label}"
+                                               FontSize="12" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextFaint}"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ==================== 开关（ToggleSwitch） ====================
+             参照 WorkBuddy 设置窗口的布尔行：标签在左、药丸开关在右。
+             "开"= 主题蓝轨道 + 白拇指右移；"关"= 灰轨道 + 白拇指左侧。
+             （2026-10-21 起"开"色由参考图的绿色改为 Accent —— 用户要求开关
+              颜色与其它控件主题色一致，全窗口只保留一个强调色族。）
+             用 ToggleButton 而非 CheckBox：布尔设置行统一"标签 + 开关"两段式，
+             不再让控件自己叼着文字。三个存量布尔控件（XuanKongSiEnabledCheck /
+             AutoStartCheck / MinimizeToTrayCheck）直接换成它即可 ——
+             ToggleButton 同样有 IsChecked / Checked / Unchecked，
+             代码侧零改动（事件挂接与读写都兼容）。
+             拇指位移走 RenderTransform + 触发器动画，不动布局，不会抖。 -->
+        <Style x:Key="ToggleSwitchStyle" TargetType="ToggleButton">
+            <Setter Property="Width" Value="40"/>
+            <Setter Property="Height" Value="22"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Grid>
+                            <Border x:Name="Track" CornerRadius="11" Background="#FFE3E3E3"/>
+                            <!-- 40 − 拇指18 − 左右各留2 = 位移 18 -->
+                            <Border x:Name="Thumb" Width="18" Height="18" CornerRadius="9"
+                                    Background="#FFFFFFFF" HorizontalAlignment="Left" Margin="2,0,0,0">
+                                <Border.RenderTransform>
+                                    <TranslateTransform x:Name="ThumbMove" X="0"/>
+                                </Border.RenderTransform>
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="#FFD8D8D8"/>
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Track" Property="Background" Value="{StaticResource Accent}"/>
+                                <Trigger.EnterActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Thumb"
+                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                             To="18" Duration="0:0:0.1"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.EnterActions>
+                                <Trigger.ExitActions>
+                                    <BeginStoryboard>
+                                        <Storyboard>
+                                            <DoubleAnimation Storyboard.TargetName="Thumb"
+                                                             Storyboard.TargetProperty="(UIElement.RenderTransform).(TranslateTransform.X)"
+                                                             To="0" Duration="0:0:0.1"/>
+                                        </Storyboard>
+                                    </BeginStoryboard>
+                                </Trigger.ExitActions>
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.5"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- ==================== 极简滑块 ====================
+             参照 WorkBuddy 设置窗口的「字体大小」：3px 细轨 + 小白圆拇指，
+             去掉系统默认的重复按钮与方槽。PART_Track 这个名字不能改
+             （Slider 靠它做值↔位置换算，改了拖动失效且不报错）。 -->
+        <Style x:Key="MinimalSliderStyle" TargetType="Slider">
+            <Setter Property="Height" Value="20"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Slider">
+                        <Grid>
+                            <Border Height="3" CornerRadius="1.5" Background="#FFE0E0E0"
+                                    VerticalAlignment="Center"/>
+                            <Track x:Name="PART_Track" VerticalAlignment="Center">
+                                <Track.DecreaseRepeatButton>
+                                    <RepeatButton Command="Slider.DecreaseLarge" Focusable="False" Opacity="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.DecreaseRepeatButton>
+                                <Track.IncreaseRepeatButton>
+                                    <RepeatButton Command="Slider.IncreaseLarge" Focusable="False" Opacity="0">
+                                        <RepeatButton.Template>
+                                            <ControlTemplate TargetType="RepeatButton">
+                                                <Border Background="Transparent"/>
+                                            </ControlTemplate>
+                                        </RepeatButton.Template>
+                                    </RepeatButton>
+                                </Track.IncreaseRepeatButton>
+                                <Track.Thumb>
+                                    <Thumb>
+                                        <Thumb.Template>
+                                            <ControlTemplate TargetType="Thumb">
+                                                <Border Width="14" Height="14" CornerRadius="7"
+                                                        Background="#FFFFFFFF"
+                                                        BorderBrush="{StaticResource InputEdgeHot}"
+                                                        BorderThickness="1"/>
+                                            </ControlTemplate>
+                                        </Thumb.Template>
+                                    </Thumb>
+                                </Track.Thumb>
+                            </Track>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ⚠️ 本页的下拉框**刻意比 FormRowH(32) 高**：44 = 行高 50 − 留白。
              2026-09-22 第四轮之前，这个高度是"引线起点沿行边缘滑动 ±21 时不许滑出框"
              的硬约束（44 = 2×(21+1)）；第四轮起点钉死在**框侧边中点**后这条约束消失了，
@@ -302,6 +882,11 @@
              改它不再影响引线，只要行高仍是 50（同步调 OpRowStyle 的上下内边距）。 -->
         <Style x:Key="OpComboStyle" TargetType="ComboBox" BasedOn="{StaticResource ComboStyle}">
             <Setter Property="Height" Value="44"/>
+            <!-- 清单现在是 14 个动作 + 4 个组头 = 18 行（约 494px），
+                 超过 ComboBox 的默认弹层高度（约屏幕高度的 1/3），必须显式给上限；
+                 500 能让 1080p 下基本一屏看全，小屏则出细滚动条。 -->
+            <Setter Property="MaxDropDownHeight" Value="500"/>
+            <Setter Property="ItemContainerStyle" Value="{StaticResource OpActionItemStyle}"/>
         </Style>
 
         <!-- ⚠️ 刻意**没有** OpRowTitleStyle：行内不再写「位置N · 方位」小字
@@ -330,14 +915,67 @@
         <!-- 顶部标签改为左侧纵向导航：标签横向排列在 760 宽里本来就挤，
              挪到左侧后内容区更宽，四个页面也能共用同一套边距。 -->
 
-        <!-- 参照 PixPin：选中态是**整块实心蓝 + 白字**，不是细竖条 + 淡蓝底。
-             原因：左边栏只有 150px 宽，靠竖条暗示选中在窄栏里辨识太慢；
-             实心块一眼就能定位当前位置，也省掉额外的视觉元素。
+        <!-- 搜索框（2026-10-20 参考图改版新增）：真实过滤下方导航项，
+             不是装饰品 —— 输入即按内容文本过滤，回车跳到第一个匹配项。
+             图标画在模板里（放大镜），边框聚焦时变蓝加粗，与 InputStyle 同构。 -->
+        <Style x:Key="NavSearchStyle" TargetType="TextBox">
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="FontSize" Value="13"/>
+            <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
+            <Setter Property="Background" Value="{StaticResource CardBg}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource LineSoft}"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="VerticalContentAlignment" Value="Center"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border x:Name="Bd" CornerRadius="7"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <Grid>
+                                <!-- 放大镜：圆 + 短柄，13px Stroke 1.3 -->
+                                <Path HorizontalAlignment="Left" VerticalAlignment="Center"
+                                      Margin="10,0,0,0" Width="13" Height="13" Stretch="Uniform"
+                                      Stroke="{StaticResource TextFaint}" StrokeThickness="1.3"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                    <Path.Data>
+                                        <GeometryGroup>
+                                            <EllipseGeometry Center="5.6,5.6" RadiusX="4.6" RadiusY="4.6"/>
+                                            <LineGeometry StartPoint="9.2,9.2" EndPoint="12.4,12.4"/>
+                                        </GeometryGroup>
+                                    </Path.Data>
+                                </Path>
+                                <ScrollViewer x:Name="PART_ContentHost" Margin="31,0,8,0"
+                                              VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InputEdgeHot}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource InputEdgeOn}"/>
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="1.4"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
 
-             34→36：字号提到 14 后，34 的行高让上下留白只剩 9px，
-             实心蓝块显得"扁"。36 配 14 号字，块的高宽比更接近正方形感。 -->
+        <!-- 导航项。2026-10-20 参考图改版：选中态从"整块实心蓝 + 白字"改为
+             **浅灰药丸 + 深色字 + Medium 字重**（参照 WorkBuddy 设置窗口的「通用」）。
+             原因：参考图的整体语言是中性灰 + 唯一的绿（开关），
+             蓝块选中在这个语汇里过于跳。选中必须比悬停更深一级才分得清：
+             选中 NavHoverBg(#EFEFEF) > 悬停 NavRestHoverBg(#F5F5F5) > 底 NavBg(#FAFAFA)。
+
+             图标不进模板，由每项的 Content 自带（Path + TextBlock 的 StackPanel）。
+             这样一套样式吃四种图标，不用拆四份模板。
+             Path 的 Stroke 绑到 RadioButton 的 Foreground，选中/悬停换色时图标跟着变。 -->
         <Style x:Key="NavItemStyle" TargetType="RadioButton">
-            <Setter Property="Height" Value="36"/>
+            <Setter Property="Height" Value="34"/>
             <Setter Property="FontSize" Value="14"/>
             <Setter Property="Foreground" Value="{StaticResource TextSub}"/>
             <Setter Property="Cursor" Value="Hand"/>
@@ -345,16 +983,17 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="RadioButton">
-                        <Border x:Name="Bg" Background="Transparent" CornerRadius="7" Margin="12,3">
-                            <ContentPresenter Margin="12,0,12,0" VerticalAlignment="Center"/>
+                        <Border x:Name="Bg" Background="Transparent" CornerRadius="7"
+                                Margin="8,2" Padding="10,0">
+                            <ContentPresenter VerticalAlignment="Center"/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource NavHoverBg}"/>
+                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource NavRestHoverBg}"/>
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource NavActiveBg}"/>
-                                <Setter Property="Foreground" Value="#FFFFFFFF"/>
+                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource NavHoverBg}"/>
+                                <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
                                 <Setter Property="FontWeight" Value="Medium"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
@@ -537,63 +1176,15 @@
             <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
         </Style>
 
-        <!-- 勾选项（开机启动 / 最小化到托盘 / 启用悬空寺）与
-             单选组（样式选择：圆环/Headshot/蜘蛛网/八卦）共用一套视觉。
+        <!-- ⚠️ CheckBox 版（CheckGlyphTemplate + CheckStyle）已删除
+             （2026-10-20 参考图改版）：三个布尔行（开机自动启动 / 最小化到托盘 /
+             启用悬空寺）全部换成 ToggleSwitchStyle，本窗口不再有 CheckBox。
+             以后要加勾选行：直接从下方 RadioGlyphTemplate 复制一份改 TargetType，
+             并恢复原先那段"两份样式必须逐字一致"的告诫注释。
 
-             ⚠️ 这里必须写**两份**样式，不能一份吃两家。
-             WPF 对 `Style.TargetType` 的检查发生在**套用样式的那一刻**，
-             不匹配就直接抛
-               "设置属性 System.Windows.FrameworkElement.Style 时引发了异常"。
-             它的报错只有这一句，既不说哪个 Style、也不说为什么，
-             排查成本极高 —— 所以下面两处模板刻意保持逐字一致，
-             改外观时**两个都要改**，别只动一个。
-
-             另一条硬约束：ControlTemplate 必须匹配宿主控件的类型。
-             不能把 CheckBox 的模板挂到 RadioButton 上（TargetType="CheckBox"
-             的模板只能用于 CheckBox）—— 所以这里是复制而非复用。 -->
-        <ControlTemplate x:Key="CheckGlyphTemplate" TargetType="CheckBox">
-            <StackPanel Orientation="Horizontal" Background="Transparent">
-                <Border x:Name="Box" Width="18" Height="18" CornerRadius="4"
-                        Background="{StaticResource CardBg}"
-                        BorderBrush="{StaticResource InputEdge}"
-                        BorderThickness="1"
-                        VerticalAlignment="Center">
-                    <Path x:Name="Tick" Stretch="Uniform" Margin="3.5"
-                          Stroke="#FFFFFFFF" StrokeThickness="2"
-                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"
-                          StrokeLineJoin="Round"
-                          Data="M 0,5 L 4,9 L 12,0" Visibility="Collapsed"/>
-                </Border>
-                <ContentPresenter Margin="9,0,0,0" VerticalAlignment="Center"
-                                  RecognizesAccessKey="True"/>
-            </StackPanel>
-            <ControlTemplate.Triggers>
-                <Trigger Property="IsMouseOver" Value="True">
-                    <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource InputEdgeHot}"/>
-                </Trigger>
-                <Trigger Property="IsChecked" Value="True">
-                    <Setter TargetName="Box" Property="Background" Value="{StaticResource Accent}"/>
-                    <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource Accent}"/>
-                    <Setter TargetName="Tick" Property="Visibility" Value="Visible"/>
-                </Trigger>
-                <Trigger Property="IsEnabled" Value="False">
-                    <Setter Property="Foreground" Value="{StaticResource TextFaint}"/>
-                    <Setter TargetName="Box" Property="Background" Value="#FFF0F0F0"/>
-                </Trigger>
-            </ControlTemplate.Triggers>
-        </ControlTemplate>
-
-        <Style x:Key="CheckStyle" TargetType="CheckBox">
-            <Setter Property="FontSize" Value="14"/>
-            <Setter Property="Foreground" Value="{StaticResource TextMain}"/>
-            <Setter Property="VerticalContentAlignment" Value="Center"/>
-            <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
-            <Setter Property="Template" Value="{StaticResource CheckGlyphTemplate}"/>
-        </Style>
-
-        <!-- 单选组：外观与勾选框一致，但 TargetType 必须是 RadioButton。
-             模板内容与上面逐字相同（见上方说明，改动时两处同改）。 -->
+             单选组（样式选择：圆环/Headshot/蜘蛛网/八卦）仍是 RadioButton 蓝勾。
+             它是"选一类"不是"开一个功能"，不吃药丸开关 —— 与参考图的语言不冲突：
+             参考图的选择类控件也是下拉/单选，没有绿色。 -->
         <ControlTemplate x:Key="RadioGlyphTemplate" TargetType="RadioButton">
             <StackPanel Orientation="Horizontal" Background="Transparent">
                 <Border x:Name="Box" Width="18" Height="18" CornerRadius="4"
@@ -653,17 +1244,99 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <!-- 左侧导航：参照 PixPin，窄栏 + 实心块选中。
-                 顶部原先有一行 "WinLoop" 应用名，已按需求移除 ——
-                 窗口标题栏已经写着应用名，栏内再重复一次是冗余；
-                 去掉后导航项整体上移，与右侧页标题的基线更贴近。 -->
+            <!-- 左侧导航：搜索框 + 纵向导航（2026-10-20 参考图改版）。
+                 顶部原先有一行 "WinLoop" 应用名，早已移除 —— 窗口标题栏已写着应用名。
+                 ⚠️ 图标 Stroke 绑 RadioButton.Foreground（RelativeSource AncestorType）：
+                 选中/悬停换 Foreground 时图标跟着变色；若把图标写死在模板里，
+                 四种图标就要拆四份模板。这样一套样式吃四种图标。
+                 ⚠️ 四个 Name 与 GroupName="Nav" 不能动 —— BindNavigation() 按名字索引；
+                 搜索过滤只改 Visibility，不销毁控件，Checked 事件链不断。 -->
             <Border Grid.Column="0" Background="{StaticResource NavBg}"
                     BorderBrush="{StaticResource LineEdge}" BorderThickness="0,0,1,0">
-                <StackPanel Margin="0,14,0,0">
-                    <RadioButton x:Name="NavMenuStyle"  Content="菜单样式"  GroupName="Nav" IsChecked="True" Style="{StaticResource NavItemStyle}"/>
-                    <RadioButton x:Name="NavOperation"  Content="操作配置"  GroupName="Nav" Style="{StaticResource NavItemStyle}"/>
-                    <RadioButton x:Name="NavXuanKongSi" Content="悬空寺"    GroupName="Nav" Style="{StaticResource NavItemStyle}"/>
-                    <RadioButton x:Name="NavMisc"       Content="杂项设置"  GroupName="Nav" Style="{StaticResource NavItemStyle}"/>
+                <StackPanel Margin="0,12,0,0">
+                    <TextBox x:Name="NavSearchBox" Style="{StaticResource NavSearchStyle}"
+                             Margin="10,0,10,10"
+                             TextChanged="NavSearchBox_TextChanged"
+                             KeyDown="NavSearchBox_KeyDown"/>
+
+                    <!-- 菜单样式：圆环菜单的俯视（外圈 + 中心点） -->
+                    <RadioButton x:Name="NavMenuStyle" GroupName="Nav" IsChecked="True"
+                                 Style="{StaticResource NavItemStyle}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="16" Height="16" Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                  StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                <Path.Data>
+                                    <GeometryGroup>
+                                        <EllipseGeometry Center="8,8" RadiusX="6.8" RadiusY="6.8"/>
+                                        <EllipseGeometry Center="8,8" RadiusX="1.6" RadiusY="1.6"/>
+                                    </GeometryGroup>
+                                </Path.Data>
+                            </Path>
+                            <TextBlock Text="菜单样式" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 操作配置：2×2 方格网 -->
+                    <RadioButton x:Name="NavOperation" GroupName="Nav"
+                                 Style="{StaticResource NavItemStyle}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="16" Height="16" Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                  StrokeThickness="1.4">
+                                <Path.Data>
+                                    <GeometryGroup>
+                                        <RectangleGeometry Rect="0.5,0.5,6.2,6.2" RadiusX="1.4" RadiusY="1.4"/>
+                                        <RectangleGeometry Rect="9.3,0.5,6.2,6.2" RadiusX="1.4" RadiusY="1.4"/>
+                                        <RectangleGeometry Rect="0.5,9.3,6.2,6.2" RadiusX="1.4" RadiusY="1.4"/>
+                                        <RectangleGeometry Rect="9.3,9.3,6.2,6.2" RadiusX="1.4" RadiusY="1.4"/>
+                                    </GeometryGroup>
+                                </Path.Data>
+                            </Path>
+                            <TextBlock Text="操作配置" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 悬空寺：一张浮动的文档页（外框 + 三行内容线） -->
+                    <RadioButton x:Name="NavXuanKongSi" GroupName="Nav"
+                                 Style="{StaticResource NavItemStyle}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="16" Height="16" Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                  StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                <Path.Data>
+                                    <GeometryGroup>
+                                        <RectangleGeometry Rect="2.2,0.7,11.6,14.6" RadiusX="2.2" RadiusY="2.2"/>
+                                        <LineGeometry StartPoint="5.4,4.6" EndPoint="10.6,4.6"/>
+                                        <LineGeometry StartPoint="5.4,7.8" EndPoint="10.6,7.8"/>
+                                        <LineGeometry StartPoint="5.4,11" EndPoint="8.6,11"/>
+                                    </GeometryGroup>
+                                </Path.Data>
+                            </Path>
+                            <TextBlock Text="悬空寺" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
+
+                    <!-- 杂项设置：三条滑轨 + 两个滑块点 -->
+                    <RadioButton x:Name="NavMisc" GroupName="Nav"
+                                 Style="{StaticResource NavItemStyle}">
+                        <StackPanel Orientation="Horizontal">
+                            <Path Width="16" Height="16" Stretch="Uniform"
+                                  Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=RadioButton}}"
+                                  StrokeThickness="1.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round">
+                                <Path.Data>
+                                    <GeometryGroup>
+                                        <LineGeometry StartPoint="1,3.2" EndPoint="15,3.2"/>
+                                        <LineGeometry StartPoint="1,8" EndPoint="15,8"/>
+                                        <LineGeometry StartPoint="1,12.8" EndPoint="15,12.8"/>
+                                        <EllipseGeometry Center="10.6,3.2" RadiusX="2" RadiusY="2"/>
+                                        <EllipseGeometry Center="5.2,12.8" RadiusX="2" RadiusY="2"/>
+                                    </GeometryGroup>
+                                </Path.Data>
+                            </Path>
+                            <TextBlock Text="杂项设置" Margin="10,0,0,0"/>
+                        </StackPanel>
+                    </RadioButton>
                 </StackPanel>
             </Border>
 
@@ -690,83 +1363,85 @@
                     </TabControl.Template>
 
                     <!-- ========== 页 1：菜单样式 ==========
-                         参照 PixPin 重排：整页**一张白卡 + 行流**。
-                         每组内容用 GroupHeaderStyle 小标题分隔，组内每行左右两端对齐，
-                         行与行之间夹一条 RowSeparator 淡线 —— 整齐感全部来自这条线。
+                         2026-10-20 参考图改版：分组标题移到卡片**上方**，卡片只装行；
+                         行间无分割线（靠行距呼吸）；控件右对齐。每行 = 标签列(240) + 内容列(*)。
                          ⚠️ Name 全部保留不变，SettingsWindow.xaml.cs 按名字读写控件与切可见性。 -->
                     <TabItem Header="菜单样式">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,20" VerticalAlignment="Top">
                             <StackPanel>
-                                <TextBlock Text="菜单样式" Style="{StaticResource PageTitleStyle}"/>
 
-                                <!-- 卡片 1：全部配置项 -->
+                                <!-- 节：样式选择。单选组是"选一类"而不是"调一个值"，
+                                     保持左对齐 —— 四个选项横排占掉整行右侧会失衡。 -->
+                                <TextBlock Text="样式" Style="{StaticResource GroupHeaderStyle}" Margin="0,0,0,8"/>
                                 <Border Style="{StaticResource GroupBorder}">
-                                    <StackPanel>
+                                    <!-- 注意：这里的 IsChecked 只是设计期的初始状态，
+                                         运行时一律由 PopulateUIFromConfig() 按配置覆盖。
+                                         当前程序默认样式是 Headshot，所以初始勾它。 -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <RadioButton Name="BasicRadialRadio" Content="圆环"
+                                                     Margin="0,0,24,0" VerticalAlignment="Center"
+                                                     Style="{StaticResource RadioStyle}"/>
+                                        <RadioButton Name="CSHeadshotRadio" Content="Headshot" IsChecked="True"
+                                                     Margin="0,0,24,0" VerticalAlignment="Center"
+                                                     Style="{StaticResource RadioStyle}"/>
+                                        <RadioButton Name="SpiderWebRadio" Content="蜘蛛网"
+                                                     Margin="0,0,24,0" VerticalAlignment="Center"
+                                                     Style="{StaticResource RadioStyle}"/>
+                                        <RadioButton Name="BaguaRadio" Content="八卦"
+                                                     VerticalAlignment="Center"
+                                                     Style="{StaticResource RadioStyle}"/>
+                                    </StackPanel>
+                                </Border>
 
-                                        <!-- ── 组：样式选择 ──
-                                             注意：这里的 IsChecked 只是设计期的初始状态，
-                                             运行时一律由 PopulateUIFromConfig() 按配置覆盖。
-                                             当前程序默认样式是 Headshot，所以初始勾它。 -->
-                                        <TextBlock Text="样式" Style="{StaticResource GroupHeaderStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,12"/>
-                                        <Grid Margin="0,0,0,4">
-                                            <StackPanel Orientation="Horizontal">
-                                                <RadioButton Name="BasicRadialRadio" Content="圆环"
-                                                             Margin="0,0,24,0" VerticalAlignment="Center"
-                                                             Style="{StaticResource RadioStyle}"/>
-                                                <RadioButton Name="CSHeadshotRadio" Content="Headshot" IsChecked="True"
-                                                             Margin="0,0,24,0" VerticalAlignment="Center"
-                                                             Style="{StaticResource RadioStyle}"/>
-                                                <RadioButton Name="SpiderWebRadio" Content="蜘蛛网"
-                                                             Margin="0,0,24,0" VerticalAlignment="Center"
-                                                             Style="{StaticResource RadioStyle}"/>
-                                                <RadioButton Name="BaguaRadio" Content="八卦"
-                                                             VerticalAlignment="Center"
-                                                             Style="{StaticResource RadioStyle}"/>
-                                            </StackPanel>
-                                        </Grid>
-
-                                        <!-- ── 组：圆环参数（圆环样式时显示） ── -->
-                                        <StackPanel Name="BasicRadialConfigGrid">
-                                            <Border Style="{StaticResource RowSeparator}" Margin="0,12,0,0"/>
-                                            <TextBlock Text="尺寸" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,4"/>
-
+                                <!-- 节：圆环参数（圆环样式时显示）。
+                                     ⚠️ StackPanel 整体可见性由 UpdateConfigPanels() 切，
+                                     标题必须放在**这个 StackPanel 里**，才能和卡片一起隐现；
+                                     拆到外面就得再加一份可见性同步，容易两处忘记改。 -->
+                                <StackPanel Name="BasicRadialConfigGrid">
+                                    <TextBlock Text="圆环参数" Style="{StaticResource GroupHeaderStyle}"/>
+                                    <Border Style="{StaticResource GroupBorder}">
+                                        <StackPanel>
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="外半径" Style="{StaticResource LabelStyle}"
-                                                           ToolTip="单位：逻辑像素（100% 缩放基准）。实际显示会按屏幕缩放比例自动放大。"/>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                            Orientation="Horizontal">
+                                                    <TextBlock Text="外半径" Style="{StaticResource LabelStyle}"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Style="{StaticResource HintIcon}"
+                                                                    ToolTip="单位：逻辑像素（100% 缩放基准）。实际显示会按屏幕缩放比例自动放大。"/>
+                                                </StackPanel>
                                                 <TextBox Grid.Column="1" Name="BasicOuterRadiusBox" Text="50"
-                                                         Style="{StaticResource InputStyle}"
+                                                         Style="{StaticResource InputStyle}" HorizontalAlignment="Right"
                                                          ToolTip="单位：逻辑像素（100% 缩放基准）。实际显示会按屏幕缩放比例自动放大。"/>
                                             </Grid>
-                                            <Border Style="{StaticResource RowSeparator}"/>
 
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="内半径" Style="{StaticResource LabelStyle}"
-                                                           ToolTip="单位：逻辑像素（100% 缩放基准）。决定中心死区大小。"/>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                            Orientation="Horizontal">
+                                                    <TextBlock Text="内半径" Style="{StaticResource LabelStyle}"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Style="{StaticResource HintIcon}"
+                                                                    ToolTip="决定中心死区大小。单位：逻辑像素（100% 缩放基准）。"/>
+                                                </StackPanel>
                                                 <TextBox Grid.Column="1" Name="BasicInnerRadiusBox" Text="28"
-                                                         Style="{StaticResource InputStyle}"
+                                                         Style="{StaticResource InputStyle}" HorizontalAlignment="Right"
                                                          ToolTip="单位：逻辑像素（100% 缩放基准）。"/>
                                             </Grid>
-
-                                            <!-- 配色（同属圆环，不再单开卡片） -->
-                                            <Border Style="{StaticResource RowSeparator}" Margin="0,12,0,0"/>
-                                            <TextBlock Text="配色" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,2"/>
 
                                             <!-- ⚠️ 色值文本框 Name="Basic...ColorBox" 仍在，但**界面不可见**。
                                                  它是这个颜色的真值载体：配置读写、格式校验、
                                                  预览重绘全挂在它上面（代码里约 10 处引用）。
                                                  删控件会牵动整套逻辑，所以选择「留在树上但不显示」——
                                                  Width/Height 归零 + Collapsed，不占任何布局空间。
+                                                 参考图改版后它挪到按钮同一格（Grid 允许同格叠放，
+                                                 Collapsed 元素不参与布局），不再多占一列。
 
                                                  色值改由按钮文字承担：按钮 Content 绑到文本框 Text，
                                                  于是「色块 + #RRGGBB」在同一个按钮里表达。
@@ -774,196 +1449,195 @@
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="圆环颜色" Style="{StaticResource LabelStyle}"/>
-                                                <Button Grid.Column="1" Name="BasicRingColorPickButton"
+                                                <Button Grid.Column="1" Name="BasicRingColorPickButton" HorizontalAlignment="Right"
                                                         Style="{StaticResource ColorSwatchButton}"
                                                         Content="{Binding ElementName=BasicRingColorBox, Path=Text}"
                                                         Tag="{Binding ElementName=BasicRingColorBox, Path=Text}"/>
-                                                <TextBox Grid.Column="2" Name="BasicRingColorBox" Text="#FFFFFF"
+                                                <TextBox Grid.Column="1" Name="BasicRingColorBox" Text="#FFFFFF"
                                                          Width="0" Height="0" Visibility="Collapsed"
                                                          IsTabStop="False" Focusable="False"/>
                                             </Grid>
-                                            <Border Style="{StaticResource RowSeparator}"/>
 
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="高亮颜色" Style="{StaticResource LabelStyle}"/>
-                                                <Button Grid.Column="1" Name="BasicHighlightColorPickButton"
+                                                <Button Grid.Column="1" Name="BasicHighlightColorPickButton" HorizontalAlignment="Right"
                                                         Style="{StaticResource ColorSwatchButton}"
                                                         Content="{Binding ElementName=BasicHighlightColorBox, Path=Text}"
                                                         Tag="{Binding ElementName=BasicHighlightColorBox, Path=Text}"/>
-                                                <TextBox Grid.Column="2" Name="BasicHighlightColorBox" Text="#007AFF"
+                                                <TextBox Grid.Column="1" Name="BasicHighlightColorBox" Text="#007AFF"
                                                          Width="0" Height="0" Visibility="Collapsed"
                                                          IsTabStop="False" Focusable="False"/>
                                             </Grid>
                                         </StackPanel>
+                                    </Border>
+                                </StackPanel>
 
-                                        <!-- 兼容：原独立配色卡片名，代码按 isBasic 切它的可见性 -->
-                                        <Border Name="BasicColorCard" Height="0" Visibility="Collapsed"/>
+                                <!-- 兼容：原独立配色卡片名，代码按 isBasic 切它的可见性 -->
+                                <Border Name="BasicColorCard" Height="0" Visibility="Collapsed"/>
 
-                                        <!-- ── 组：Headshot（八角星造型；选中 Headshot 时显示） ── -->
-                                        <StackPanel Name="CSHeadshotConfigGrid" Visibility="Collapsed">
-                                            <Border Style="{StaticResource RowSeparator}" Margin="0,14,0,0"/>
-                                            <TextBlock Text="大小" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,2"/>
-
-                                            <Grid Style="{StaticResource SettingRow}">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                    <ColumnDefinition Width="Auto"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="缩放" Style="{StaticResource LabelStyle}"
-                                                           ToolTip="100% = 基准大小（100% 缩放下的逻辑像素）。实际显示还会按屏幕缩放比例自动放大。"/>
-                                                <Slider Grid.Column="1" Name="CSHeadshotScaleSlider"
+                                <!-- 节：Headshot 参数（选中 Headshot 时显示） -->
+                                <StackPanel Name="CSHeadshotConfigGrid" Visibility="Collapsed">
+                                    <TextBlock Text="Headshot 参数" Style="{StaticResource GroupHeaderStyle}"/>
+                                    <Border Style="{StaticResource GroupBorder}">
+                                        <Grid Style="{StaticResource SettingRow}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                        Orientation="Horizontal">
+                                                <TextBlock Text="缩放" Style="{StaticResource LabelStyle}"
+                                                           VerticalAlignment="Center"/>
+                                                <Button Style="{StaticResource HintIcon}"
+                                                                ToolTip="100% = 基准大小。实际显示还会按屏幕缩放比例自动放大。"/>
+                                            </StackPanel>
+                                            <!-- 滑块 + 数值同一行右对齐，跟参考图「字体大小」同行语汇 -->
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Slider Name="CSHeadshotScaleSlider"
+                                                        Style="{StaticResource MinimalSliderStyle}"
+                                                        Width="220" Margin="0,0,12,0"
                                                         Minimum="50" Maximum="200" Value="100"
                                                         TickFrequency="5" IsSnapToTickEnabled="True"
-                                                        VerticalAlignment="Center" Margin="0,0,12,0"
+                                                        VerticalAlignment="Center"
                                                         ToolTip="100% = 基准大小。实际显示还会按屏幕缩放比例自动放大。"/>
-                                                <TextBlock Grid.Column="2" Name="CSHeadshotScaleLabel" Text="100%"
+                                                <TextBlock Name="CSHeadshotScaleLabel" Text="100%"
                                                            Width="48" Style="{StaticResource LabelStyle}"/>
-                                            </Grid>
-                                        </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </StackPanel>
 
-                                        <!-- ── 组：蜘蛛网（蜘蛛网样式时显示） ── -->
-                                        <StackPanel Name="SpiderWebConfigGrid" Visibility="Collapsed">
-                                            <Border Style="{StaticResource RowSeparator}" Margin="0,14,0,0"/>
-                                            <TextBlock Text="尺寸" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,2"/>
-
+                                <!-- 节：蜘蛛网参数（选中蜘蛛网时显示） -->
+                                <StackPanel Name="SpiderWebConfigGrid" Visibility="Collapsed">
+                                    <TextBlock Text="蜘蛛网参数" Style="{StaticResource GroupHeaderStyle}"/>
+                                    <Border Style="{StaticResource GroupBorder}">
+                                        <StackPanel>
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="外圈半径" Style="{StaticResource LabelStyle}"
-                                                           ToolTip="单位：逻辑像素（100% 缩放基准）。实际显示会按屏幕缩放比例自动放大。"/>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                            Orientation="Horizontal">
+                                                    <TextBlock Text="外圈半径" Style="{StaticResource LabelStyle}"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Style="{StaticResource HintIcon}"
+                                                                    ToolTip="单位：逻辑像素（100% 缩放基准）。实际显示会按屏幕缩放比例自动放大。"/>
+                                                </StackPanel>
                                                 <TextBox Grid.Column="1" Name="SpiderWebRadiusBox" Text="70"
-                                                         Style="{StaticResource InputStyle}"
+                                                         Style="{StaticResource InputStyle}" HorizontalAlignment="Right"
                                                          ToolTip="单位：逻辑像素（100% 缩放基准）。"/>
                                             </Grid>
-                                            <Border Style="{StaticResource RowSeparator}"/>
 
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="圈数" Style="{StaticResource LabelStyle}"/>
                                                 <TextBox Grid.Column="1" Name="SpiderWebRingsBox" Text="3"
-                                                         Style="{StaticResource InputStyle}"/>
+                                                         Style="{StaticResource InputStyle}" HorizontalAlignment="Right"/>
                                             </Grid>
-
-                                            <Border Style="{StaticResource RowSeparator}" Margin="0,12,0,0"/>
-                                            <TextBlock Text="配色" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,2"/>
 
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="线条颜色" Style="{StaticResource LabelStyle}"/>
-                                                <Button Grid.Column="1" Name="SpiderWebLineColorPickButton"
+                                                <Button Grid.Column="1" Name="SpiderWebLineColorPickButton" HorizontalAlignment="Right"
                                                         Style="{StaticResource ColorSwatchButton}"
                                                         Content="{Binding ElementName=SpiderWebLineColorBox, Path=Text}"
                                                         Tag="{Binding ElementName=SpiderWebLineColorBox, Path=Text}"/>
-                                                <TextBox Grid.Column="2" Name="SpiderWebLineColorBox" Text="#C0C0C0"
+                                                <TextBox Grid.Column="1" Name="SpiderWebLineColorBox" Text="#C0C0C0"
                                                          Width="0" Height="0" Visibility="Collapsed"
                                                          IsTabStop="False" Focusable="False"/>
                                             </Grid>
-                                            <Border Style="{StaticResource RowSeparator}"/>
 
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="高亮颜色" Style="{StaticResource LabelStyle}"/>
-                                                <Button Grid.Column="1" Name="SpiderWebHighlightColorPickButton"
+                                                <Button Grid.Column="1" Name="SpiderWebHighlightColorPickButton" HorizontalAlignment="Right"
                                                         Style="{StaticResource ColorSwatchButton}"
                                                         Content="{Binding ElementName=SpiderWebHighlightColorBox, Path=Text}"
                                                         Tag="{Binding ElementName=SpiderWebHighlightColorBox, Path=Text}"/>
-                                                <TextBox Grid.Column="2" Name="SpiderWebHighlightColorBox" Text="#007AFF"
+                                                <TextBox Grid.Column="1" Name="SpiderWebHighlightColorBox" Text="#007AFF"
                                                          Width="0" Height="0" Visibility="Collapsed"
                                                          IsTabStop="False" Focusable="False"/>
                                             </Grid>
-
                                         </StackPanel>
+                                    </Border>
+                                </StackPanel>
 
-                                        <!-- ── 组：八卦（八卦样式时显示） ── -->
-                                        <StackPanel Name="BaguaConfigGrid" Visibility="Collapsed">
-                                            <Border Style="{StaticResource RowSeparator}" Margin="0,14,0,0"/>
-                                            <TextBlock Text="尺寸" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,2"/>
-
+                                <!-- 节：八卦参数（选中八卦时显示） -->
+                                <StackPanel Name="BaguaConfigGrid" Visibility="Collapsed">
+                                    <TextBlock Text="八卦参数" Style="{StaticResource GroupHeaderStyle}"/>
+                                    <Border Style="{StaticResource GroupBorder}">
+                                        <StackPanel>
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="半径" Style="{StaticResource LabelStyle}"
-                                                           ToolTip="单位：逻辑像素（100% 缩放基准）。实际显示会按屏幕缩放比例自动放大。"/>
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                            Orientation="Horizontal">
+                                                    <TextBlock Text="半径" Style="{StaticResource LabelStyle}"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Style="{StaticResource HintIcon}"
+                                                                    ToolTip="单位：逻辑像素（100% 缩放基准）。实际显示会按屏幕缩放比例自动放大。"/>
+                                                </StackPanel>
                                                 <TextBox Grid.Column="1" Name="BaguaRadiusBox" Text="90"
-                                                         Style="{StaticResource InputStyle}"
+                                                         Style="{StaticResource InputStyle}" HorizontalAlignment="Right"
                                                          ToolTip="单位：逻辑像素（100% 缩放基准）。"/>
                                             </Grid>
 
-                                            <Border Style="{StaticResource RowSeparator}" Margin="0,12,0,0"/>
-                                            <TextBlock Text="外观" Style="{StaticResource GroupHeaderStyle}" Margin="0,12,0,2"/>
-
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="线条颜色" Style="{StaticResource LabelStyle}"/>
-                                                <Button Grid.Column="1" Name="BaguaLineColorPickButton"
+                                                <Button Grid.Column="1" Name="BaguaLineColorPickButton" HorizontalAlignment="Right"
                                                         Style="{StaticResource ColorSwatchButton}"
                                                         Content="{Binding ElementName=BaguaLineColorBox, Path=Text}"
                                                         Tag="{Binding ElementName=BaguaLineColorBox, Path=Text}"/>
-                                                <TextBox Grid.Column="2" Name="BaguaLineColorBox" Text="#000000"
+                                                <TextBox Grid.Column="1" Name="BaguaLineColorBox" Text="#000000"
                                                          Width="0" Height="0" Visibility="Collapsed"
                                                          IsTabStop="False" Focusable="False"/>
                                             </Grid>
-                                            <Border Style="{StaticResource RowSeparator}"/>
 
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="选区透明度" Style="{StaticResource LabelStyle}"/>
                                                 <TextBox Grid.Column="1" Name="BaguaSectorTransparencyBox" Text="70"
-                                                         Style="{StaticResource InputStyle}"/>
+                                                         Style="{StaticResource InputStyle}" HorizontalAlignment="Right"/>
                                             </Grid>
-                                            <Border Style="{StaticResource RowSeparator}"/>
 
                                             <Grid Style="{StaticResource SettingRow}">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                    <ColumnDefinition Width="Auto"/>
                                                     <ColumnDefinition Width="*"/>
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Grid.Column="0" Text="高亮透明度" Style="{StaticResource LabelStyle}"/>
                                                 <TextBox Grid.Column="1" Name="BaguaHighlightTransparencyBox" Text="0"
-                                                         Style="{StaticResource InputStyle}"/>
+                                                         Style="{StaticResource InputStyle}" HorizontalAlignment="Right"/>
                                             </Grid>
-
                                         </StackPanel>
-
-                                    </StackPanel>
-                                </Border>
+                                    </Border>
+                                </StackPanel>
 
                                 <!-- 效果预览**已移出本页** —— 见 UI/MenuPreviewWindow.xaml。
                                      原先它作为「卡片 2」跟在参数卡后面，同一个滚动容器里
@@ -1014,6 +1688,15 @@
                                      （2026-09-22 用户要求删）：左边导航已经写着「操作配置」，
                                      卡里再顶一行组名是重复的一层层级，白占纵向空间。 -->
                                 <Grid Name="OpLayoutGrid" Margin="0,0,0,2" VerticalAlignment="Center">
+                                    <!-- Row0 = 三栏（左右列 + 菜单 + 引线层）；Row1 = 卡底通栏行
+                                         （系统分屏修饰键）。⚠️ 三栏与引线层全部必须显式 Grid.Row="0"：
+                                         WPF 子元素默认就是 Row0，但不写出来，将来有人在 Row1
+                                         下面插行时很容易漏改 —— 引线层要是漂到 Row1 就会压住
+                                         修饰键下拉框（它铺满 3 列、透明、不可命中测试）。 -->
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
                                     <Grid.ColumnDefinitions>
                                         <!-- 186→150（2026-09-22 用户"配置选项适当调小点"）：
                                              列让窄 → 行的朝内边缘离菜单中心更远 → 中间的菜单
@@ -1033,7 +1716,7 @@
                                                  top=+18 使元素下移 9px，bottom=−10 抵消末尾行距。
                                                  下移后第 4 行（位置5 正下）行心 = +99 = 锚点 y → 一段直线。
                                                  见 OpRowStyle 上方注释的 ②。 -->
-                                            <StackPanel Name="OpLeftList" Grid.Column="0" VerticalAlignment="Center"
+                                            <StackPanel Name="OpLeftList" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center"
                                                         Margin="0,18,0,-10">
                                                 <Border Name="OpRowP8" Style="{StaticResource OpRowStyle}">
                                                     <ComboBox Name="OpComboP8" Tag="7" Style="{StaticResource OpComboStyle}"
@@ -1066,7 +1749,7 @@
                                                  约束只剩两条：画布装得下、锚点环 + 选中态圆点
                                                  不许越进行的内边缘（后者按**实测**反解，
                                                  见 SettingsWindow.xaml.cs 的 ComputeOpFitCap）。 -->
-                                            <Canvas Name="OpPreviewCanvas" Grid.Column="1"
+                                            <Canvas Name="OpPreviewCanvas" Grid.Row="0" Grid.Column="1"
                                                     Width="252" Height="252"
                                                     Background="#00000000"
                                                     HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -1081,7 +1764,7 @@
                                                  bottom=+8 使元素上移 9px（含抵消末尾行距的 −10 基准）。
                                                  上移后第 1 行（位置1 正上）行心 = −99 = 锚点 y → 一段直线。
                                                  见 OpRowStyle 上方注释的 ②。 -->
-                                            <StackPanel Name="OpRightList" Grid.Column="2" VerticalAlignment="Center"
+                                            <StackPanel Name="OpRightList" Grid.Row="0" Grid.Column="2" VerticalAlignment="Center"
                                                         Margin="0,0,0,8">
                                                 <Border Name="OpRowP1" Style="{StaticResource OpRowStyle}">
                                                     <ComboBox Name="OpComboP1" Tag="0" Style="{StaticResource OpComboStyle}"
@@ -1109,28 +1792,85 @@
                                                  铺满三栏、压在最上层，但 IsHitTestVisible=False：
                                                  它只负责把每行连到菜单里对应的扇区，不参与任何交互
                                                  （否则会挡住左右列的 ComboBox 点击与悬停）。
-                                                 引线画在**行的朝内边缘之外**，不进入行内，所以不会盖住行内容。 -->
-                                            <Canvas Name="OpConnectorLayer" Grid.ColumnSpan="3"
+                                                 引线画在**行的朝内边缘之外**，不进入行内，所以不会盖住行内容。
+                                                 ⚠️ Grid.Row="0" 不能省（见上方 RowDefinitions 注释）。 -->
+                                            <Canvas Name="OpConnectorLayer" Grid.Row="0" Grid.ColumnSpan="3"
                                                     IsHitTestVisible="False"/>
+
+                                            <!-- ── Row1：系统分屏修饰键（卡底通栏）──
+                                                 放这一页而不是「杂项设置」页：它是**动作触发时的
+                                                 改道开关**，与"每个扇区配什么分屏动作"是一个决策面 ——
+                                                 用户在这里配左半屏时，顺带能看到"按住哪个键走系统分屏"。
+                                                 ⚠️ 不插进左右两列：那会改变 8 行的行距/锚点计算
+                                                 （引线锚点钉在下拉框侧边中点），通栏一行全部避开。
+                                                 ⚠️ 默认值左 Alt 由 AppConfig.SystemSnapModifier 给，
+                                                 回填在 LoadConfig（PopulateUIFromConfig）里；
+                                                 保存落在 SaveConfig；选择变化由
+                                                 SystemSnapModifierCombo_SelectionChanged 即推。 -->
+                                            <Grid Grid.Row="1" Grid.ColumnSpan="3" Style="{StaticResource SettingRow}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                                            VerticalAlignment="Center">
+                                                    <TextBlock Text="修饰键" Style="{StaticResource LabelStyle}"
+                                                               VerticalAlignment="Center"/>
+                                                    <!-- 说明默认不显示，只留一个 ⓘ 提示图标（悬停出完整语义）——
+                                                         这一行不再占两行高、不去抢上面 8 行动作配置的
+                                                         视觉重心。图标样式见资源区 HintIcon。 -->
+                                                    <Button Style="{StaticResource HintIcon}"
+                                                                    ToolTip="触发动作时按住该修饰键：左/右半屏、四象限类动作将改走 Windows 系统分屏（Win+方向键），使用系统原生效果；其余动作（上下半屏、三分之二屏、窗口居中、窗口状态类）不受影响。"/>
+                                                </StackPanel>
+                                                <ComboBox Grid.Column="1" Name="SystemSnapModifierCombo"
+                                                          Style="{StaticResource ComboStyle}"
+                                                          Width="200" HorizontalAlignment="Right"
+                                                          SelectionChanged="SystemSnapModifierCombo_SelectionChanged"/>
+                                            </Grid>
                                 </Grid>
                             </Border>
                         </ScrollViewer>
                     </TabItem>
 
-                    <!-- ========== 页 3：悬空寺 ========== -->
+                    <!-- ========== 页 3：悬空寺 ==========
+                         2026-10-20 参考图改版：页标题移除、分组标题移到卡片上方、
+                         行间无分割线、控件右对齐；布尔行「启用悬空寺」从 CheckBox 换成
+                         ToggleSwitch（标签左、开关右）。
+                         ⚠️ CheckBox → ToggleButton 换型安全：两者都有
+                         IsChecked / Checked / Unchecked，代码侧
+                         （UpdateXuanKongSiOperationHint / PopulateUIFromConfig / SaveSettings）
+                         零改动。 -->
                     <TabItem Header="悬空寺">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,20" VerticalAlignment="Top">
                             <StackPanel>
-                                <TextBlock Text="悬空寺" Style="{StaticResource PageTitleStyle}"/>
-
+                                <TextBlock Text="触发与内容" Style="{StaticResource GroupHeaderStyle}" Margin="0,0,0,8"/>
                                 <Border Style="{StaticResource GroupBorder}">
                                     <StackPanel>
-                                        <TextBlock Text="触发与内容" Style="{StaticResource GroupHeaderStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,14"/>
-
-                                        <CheckBox Name="XuanKongSiEnabledCheck" Content="启用悬空寺"
-                                                  IsChecked="True" Margin="0,2,0,10"
-                                                  Style="{StaticResource CheckStyle}"/>
+                                        <Grid Style="{StaticResource SettingRow}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                        Orientation="Horizontal">
+                                                <TextBlock Text="启用悬空寺" Style="{StaticResource LabelStyle}"
+                                                           VerticalAlignment="Center"/>
+                                                <!-- ToolTip 不在 XAML 里写死：文案要跟着触发键与开关状态变，
+                                                     由 UpdateXuanKongSiOperationHint 统一写入（与开关的
+                                                     ToolTip 同一份 text）。原先这里是静态的"显示文字或图片"，
+                                                     缺了"按 ESC 收起"那一段，点 ⓘ 会以为功能说明不全。 -->
+                                                <Button Name="XuanKongSiInfoIcon"
+                                                        Style="{StaticResource HintIcon}"/>
+                                            </StackPanel>
+                                            <!-- ToolTip 由 UpdateXuanKongSiOperationHint 动态写入
+                                                 （原「操作提示」那一行已收进这里）：文案随触发键
+                                                 下拉与开关状态变化，悬停开关即可读到。
+                                                 ShowDuration 拉长到 30s —— 默认 5s 读不完。 -->
+                                            <ToggleButton Grid.Column="1" Name="XuanKongSiEnabledCheck"
+                                                          IsChecked="True" HorizontalAlignment="Right"
+                                                          ToolTipService.ShowDuration="30000"
+                                                          Style="{StaticResource ToggleSwitchStyle}"/>
+                                        </Grid>
 
                                         <Grid Style="{StaticResource SettingRow}">
                                             <Grid.ColumnDefinitions>
@@ -1139,9 +1879,8 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="触发按键" Style="{StaticResource LabelStyle}"/>
                                             <ComboBox Grid.Column="1" Name="XuanKongSiKeyCombo" Style="{StaticResource ComboStyle}"
-                                                      Width="200" HorizontalAlignment="Left"/>
+                                                      Width="200" HorizontalAlignment="Right"/>
                                         </Grid>
-                                        <Border Style="{StaticResource RowSeparator}"/>
 
                                         <Grid Style="{StaticResource SettingRow}">
                                             <Grid.ColumnDefinitions>
@@ -1150,91 +1889,120 @@
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="展示内容" Style="{StaticResource LabelStyle}"/>
                                             <ComboBox Grid.Column="1" Name="XuanKongSiContentCombo" Style="{StaticResource ComboStyle}"
-                                                      Width="200" HorizontalAlignment="Left"/>
+                                                      Width="200" HorizontalAlignment="Right"/>
                                         </Grid>
-                                        <Border Style="{StaticResource RowSeparator}"/>
-
-                                        <Grid Style="{StaticResource SettingRow}">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                <ColumnDefinition Width="*"/>
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="操作提示" Style="{StaticResource LabelStyle}"/>
-                                            <TextBlock Grid.Column="1" Name="XuanKongSiOperationHintText"
-                                                       Foreground="{StaticResource TextSub}" TextWrapping="Wrap"
-                                                       VerticalAlignment="Center"/>
-                                        </Grid>
-                                        <Border Style="{StaticResource RowSeparator}"/>
+                                        <!-- 「操作提示」原本独占一整行（随触发键变化的动态文案），
+                                             2026-10-21 按用户要求收进「启用悬空寺」开关的 ToolTip ——
+                                             它讲的是"怎么唤出/收起"，属于该开关的补充说明，
+                                             单独占一行反而把这张卡片的行距拉得很松。
+                                             文案仍由 UpdateXuanKongSiOperationHint 动态生成
+                                             （触发键下拉变化、开关切换都会刷新）。 -->
                                     </StackPanel>
                                 </Border>
 
-                                <!-- 文字内容面板：与图片面板互斥显示 -->
-                                <Border Style="{StaticResource GroupBorder}" Name="XuanKongSiTextPanel" Visibility="Collapsed">
-                                    <StackPanel>
-                                        <TextBlock Text="文字内容（Markdown）" Style="{StaticResource GroupHeaderStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,14"/>
+                                <!-- 文字内容面板：与图片面板互斥显示。
+                                     ⚠️ 换成了 StackPanel（原来是 Border）：标题要能挪到卡片外，
+                                     面板自己只当"标题 + 卡片"的容器；代码只切 Visibility，换型无影响。 -->
+                                <StackPanel Name="XuanKongSiTextPanel" Visibility="Collapsed">
+                                    <TextBlock Text="文字内容（Markdown）" Style="{StaticResource GroupHeaderStyle}"/>
+                                    <Border Style="{StaticResource GroupBorder}">
                                         <TextBox Name="XuanKongSiTextEditor" Style="{StaticResource InputFillStyle}" Height="200"
                                                  AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"/>
-                                    </StackPanel>
-                                </Border>
+                                    </Border>
+                                </StackPanel>
 
                                 <!-- 图片面板 -->
-                                <Border Style="{StaticResource GroupBorder}" Name="XuanKongSiImagePanel" Visibility="Visible" Margin="0,0,0,0">
-                                    <StackPanel>
-                                        <TextBlock Text="图片" Style="{StaticResource GroupHeaderStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,14"/>
-                                        <Button Name="XuanKongSiPickImageButton" Content="选择图片" Width="104"
-                                                HorizontalAlignment="Left"
-                                                Style="{StaticResource SecondaryButton}"/>
+                                <StackPanel Name="XuanKongSiImagePanel" Visibility="Visible">
+                                    <TextBlock Text="图片" Style="{StaticResource GroupHeaderStyle}"/>
+                                    <Border Style="{StaticResource GroupBorder}">
+                                        <!-- ⚠️ 内层 StackPanel 不能省：Border 只能挂一个子级，
+                                             按钮 + 预览两个元素必须靠它包成单子级
+                                             （2026-10-20 构建报 MC3089 后补回）。 -->
+                                        <StackPanel>
+                                            <Button Name="XuanKongSiPickImageButton" Content="选择图片" Width="104"
+                                                    HorizontalAlignment="Left"
+                                                    Style="{StaticResource SecondaryButton}"/>
 
-                                        <!-- 图片预览：宽度跟随卡片可用宽度，等比缩放（Stretch=Uniform）
-                                             保证完整可见、高度按原始宽高比自适应。
-                                             无论用户选了图还是走默认图，都会展示 —— 用户要能
-                                             直接看到"现在实际会显示什么"。 -->
-                                        <Border Name="XuanKongSiImagePreviewBorder"
-                                                Margin="0,14,0,0" Padding="10"
-                                                Background="#FFFAFAFA"
-                                                BorderBrush="{StaticResource LineEdge}" BorderThickness="1"
-                                                CornerRadius="8"
-                                                Visibility="Collapsed">
-                                            <Image Name="XuanKongSiImagePreview"
-                                                   Stretch="Uniform"
-                                                   StretchDirection="DownOnly"
-                                                   HorizontalAlignment="Center"
-                                                   SnapsToDevicePixels="True"/>
-                                        </Border>
-                                    </StackPanel>
-                                </Border>
+                                            <!-- 图片预览：宽度跟随卡片可用宽度，等比缩放（Stretch=Uniform）
+                                                 保证完整可见、高度按原始宽高比自适应。
+                                                 无论用户选了图还是走默认图，都会展示 —— 用户要能
+                                                 直接看到"现在实际会显示什么"。 -->
+                                            <Border Name="XuanKongSiImagePreviewBorder"
+                                                    Margin="0,14,0,0" Padding="10"
+                                                    Background="#FFFAFAFA"
+                                                    BorderBrush="{StaticResource LineEdge}" BorderThickness="1"
+                                                    CornerRadius="8"
+                                                    Visibility="Collapsed">
+                                                <Image Name="XuanKongSiImagePreview"
+                                                       Stretch="Uniform"
+                                                       StretchDirection="DownOnly"
+                                                       HorizontalAlignment="Center"
+                                                       SnapsToDevicePixels="True"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
                             </StackPanel>
                         </ScrollViewer>
                     </TabItem>
 
-                    <!-- ========== 页 4：杂项设置 ========== -->
+                    <!-- ========== 页 4：杂项设置 ==========
+                         2026-10-20 参考图改版：同页 3 —— 无页标题、标题在卡片外、
+                         无分割线、控件右对齐；两个布尔行换 ToggleSwitch。 -->
                     <TabItem Header="杂项设置">
                         <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="24,20,24,20" VerticalAlignment="Top">
                             <StackPanel>
-                                <TextBlock Text="杂项设置" Style="{StaticResource PageTitleStyle}"/>
-
+                                <TextBlock Text="启动与行为" Style="{StaticResource GroupHeaderStyle}" Margin="0,0,0,8"/>
                                 <Border Style="{StaticResource GroupBorder}" Margin="0,0,0,0">
                                     <StackPanel>
-                                        <TextBlock Text="启动与行为" Style="{StaticResource GroupHeaderStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}" Margin="0,4,0,14"/>
-
-                                        <CheckBox Name="AutoStartCheck" Content="开机自动启动" IsChecked="True"
-                                                  Margin="0,2,0,10" Style="{StaticResource CheckStyle}"/>
-                                        <CheckBox Name="MinimizeToTrayCheck" Content="最小化到托盘" IsChecked="True"
-                                                  Margin="0,0,0,8" Style="{StaticResource CheckStyle}"/>
-                                        <Border Style="{StaticResource RowSeparator}"/>
+                                        <Grid Style="{StaticResource SettingRow}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                        Orientation="Horizontal">
+                                                <TextBlock Text="开机自动启动" Style="{StaticResource LabelStyle}"
+                                                           VerticalAlignment="Center"/>
+                                                <Button Style="{StaticResource HintIcon}"
+                                                                ToolTip="开启后 WinLoop 会在你登录电脑后自动启动。"/>
+                                            </StackPanel>
+                                            <ToggleButton Grid.Column="1" Name="AutoStartCheck"
+                                                          IsChecked="True" HorizontalAlignment="Right"
+                                                          Style="{StaticResource ToggleSwitchStyle}"/>
+                                        </Grid>
 
                                         <Grid Style="{StaticResource SettingRow}">
                                             <Grid.ColumnDefinitions>
                                                 <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
-                                                <ColumnDefinition Width="Auto"/>
                                                 <ColumnDefinition Width="*"/>
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="触发时长" Style="{StaticResource LabelStyle}"/>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                        Orientation="Horizontal">
+                                                <TextBlock Text="最小化到托盘" Style="{StaticResource LabelStyle}"
+                                                           VerticalAlignment="Center"/>
+                                                <Button Style="{StaticResource HintIcon}"
+                                                                ToolTip="最小化主窗口时收起到系统托盘，不占任务栏。"/>
+                                            </StackPanel>
+                                            <ToggleButton Grid.Column="1" Name="MinimizeToTrayCheck"
+                                                          IsChecked="True" HorizontalAlignment="Right"
+                                                          Style="{StaticResource ToggleSwitchStyle}"/>
+                                        </Grid>
+
+                                        <Grid Style="{StaticResource SettingRow}">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="{StaticResource FormLabelCol}"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0" VerticalAlignment="Center"
+                                                        Orientation="Horizontal">
+                                                <TextBlock Text="触发时长" Style="{StaticResource LabelStyle}"
+                                                           VerticalAlignment="Center"/>
+                                                <Button Style="{StaticResource HintIcon}"
+                                                                ToolTip="单位：毫秒。按下中键后延迟多久触发环形菜单。"/>
+                                            </StackPanel>
                                             <TextBox Grid.Column="1" Name="TriggerDelayBox" Text="200"
-                                                     Style="{StaticResource InputStyle}"/>
+                                                     Style="{StaticResource InputStyle}" HorizontalAlignment="Right"/>
                                         </Grid>
                                     </StackPanel>
                                 </Border>

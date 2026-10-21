@@ -41,6 +41,10 @@ namespace WinLoop.Config
                             cfg.AutoStart = dto.AutoStart;
                             cfg.MinimizeToTray = dto.MinimizeToTray;
                             cfg.TriggerDelay = dto.TriggerDelay;
+                            // 可空枚举：老配置 JSON 无此键 → null → 回落到 AppConfig
+                            // 自己的默认值（左 Alt）。若这里直接收 0 值，老用户一升级
+                            // 修饰键就变成"左 Shift"。
+                            cfg.SystemSnapModifier = dto.SystemSnapModifier ?? SnapModifierKey.LeftAlt;
                             cfg.XuanKongSi = dto.XuanKongSi ?? new XuanKongSiConfig();
                             cfg.SizingUnitVersion = dto.SizingUnitVersion;
 
@@ -61,6 +65,7 @@ namespace WinLoop.Config
                                 }
                             }
                             MigrateSizingUnit(cfg);
+                            MigrateActionMapping(cfg);
                             return cfg;
                         }
                     }
@@ -76,6 +81,7 @@ namespace WinLoop.Config
                         return new AppConfig();
                     }
                     MigrateSizingUnit(cfg2);
+                    MigrateActionMapping(cfg2);
                     return cfg2;
                 }
             }
@@ -115,6 +121,45 @@ namespace WinLoop.Config
             }
         }
 
+        /// <summary>
+        /// 清理 <c>WindowAction</c> 里的**空号**：把配置中指向已删除动作的序号退回"该位置的默认动作"。
+        ///
+        /// 背景（2026-10-20）：旧版动作表的 13 = 最大化/还原切换、14 = 窗口置顶切换，两项按用户
+        /// 要求删除。序号**没有回收**（回收会让老配置静默变成另一个动作，见 AppConfig.WindowAction），
+        /// 于是 13 / 14 变成空号 —— 老配置里仍有这两个数字。
+        ///
+        /// ⚠️ 为什么必须兜底：System.Text.Json 按数字反序列化枚举**不会报错**，
+        /// 未定义值会一路带到 <c>ExecuteAction</c> 的 switch 落到 default 分支被静默忽略，
+        /// 用户看到的现象只是"某个扇区突然没反应"，日志里 `Executing action: 13` 照常打印，
+        /// 排查成本极高。所以在这里一次性换成有效动作，并把替换记进日志。
+        /// </summary>
+        private static void MigrateActionMapping(AppConfig cfg)
+        {
+            try
+            {
+                if (cfg == null || cfg.ActionMapping == null || cfg.ActionMapping.Count == 0) return;
+
+                // 默认映射单独取一份：不要读 cfg 自己的（它可能整体就是畸形数据）。
+                var defaults = new AppConfig().ActionMapping;
+
+                foreach (var pos in new System.Collections.Generic.List<MenuItemPosition>(cfg.ActionMapping.Keys))
+                {
+                    WindowAction action = cfg.ActionMapping[pos];
+                    if (System.Enum.IsDefined(typeof(WindowAction), action)) continue;
+
+                    WindowAction fallback;
+                    if (!defaults.TryGetValue(pos, out fallback)) fallback = WindowAction.Minimize;
+
+                    cfg.ActionMapping[pos] = fallback;
+                    App.Log($"MigrateActionMapping: {pos} 指向已删除动作({(int)action}) → {fallback}");
+                }
+            }
+            catch (System.Exception ex)
+            {
+                App.Log("MigrateActionMapping error: " + ex.Message);
+            }
+        }
+
         public void SaveConfig(AppConfig config)
         {
             try
@@ -130,6 +175,7 @@ namespace WinLoop.Config
                     AutoStart = config.AutoStart,
                     MinimizeToTray = config.MinimizeToTray,
                     TriggerDelay = config.TriggerDelay,
+                    SystemSnapModifier = config.SystemSnapModifier,
                     XuanKongSi = config.XuanKongSi,
                     // 落盘时一律写成当前单位版本：存进去的值就是 DIP 基准值，
                     // 不能把读到时的旧标记再写回去。
@@ -212,6 +258,13 @@ namespace WinLoop.Config
         public bool AutoStart { get; set; }
         public bool MinimizeToTray { get; set; }
         public int TriggerDelay { get; set; }
+
+        /// <summary>
+        /// 系统分屏修饰键。**可空**：老 config.json 没有这个键，反序列化为 null，
+        /// 由加载方回落默认值（见 LoadConfig 里的 ?? LeftAlt）。
+        /// DTO 侧刻意不给初值 —— 给了就等于宣布"没配也是某个键"。
+        /// </summary>
+        public SnapModifierKey? SystemSnapModifier { get; set; }
         public XuanKongSiConfig XuanKongSi { get; set; }
 
         /// <summary>

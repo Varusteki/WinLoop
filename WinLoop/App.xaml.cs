@@ -28,6 +28,57 @@ namespace WinLoop
         private SystemIntegration.KeyboardHookService _keyboardHookService;
         private UI.XuanKongSiOverlayWindow _xuanKongSiOverlayWindow;
         private XuanKongSiConfig _xuanKongSiConfig;
+
+        /// <summary>
+        /// 设置窗口的单例引用。托盘双击连点、右键菜单反复点「打开设置」都走
+        /// <see cref="ShowSettingsWindow"/>，全程只允许存在一个设置窗口 ——
+        /// 以前每次触发都 new 一个，连点几下就开出一排窗口。
+        /// </summary>
+        private static UI.SettingsWindow _settingsWindow;
+
+        /// <summary>
+        /// 显示设置窗口；已存在就前置，不重复创建。
+        /// <para>
+        /// 判活用 `IsLoaded` 而不是 `!= null`：窗口被 Close 之后引用还在
+        /// （Closed 事件里才清），但 IsLoaded 已经变回 false，直接 Activate
+        /// 一个已关闭的窗口会抛 InvalidOperationException。
+        /// </para>
+        /// <para>
+        /// `Topmost` 一开一关是为了把窗口顶到最前 —— 单纯 Activate 在后台进程里
+        /// 有时只是任务栏闪烁不真正前置（Windows 的前台锁机制）。
+        /// </para>
+        /// </summary>
+        private static void ShowSettingsWindow()
+        {
+            try
+            {
+                var win = _settingsWindow;
+                if (win != null && win.IsLoaded)
+                {
+                    if (win.WindowState == WindowState.Minimized)
+                    {
+                        win.WindowState = WindowState.Normal;
+                    }
+                    win.Activate();
+                    win.Topmost = true;
+                    win.Topmost = false;
+                    return;
+                }
+
+                win = new UI.SettingsWindow();
+                _settingsWindow = win;
+                win.Closed += (s, e) =>
+                {
+                    if (ReferenceEquals(_settingsWindow, s)) _settingsWindow = null;
+                };
+                win.Show();
+                win.Activate();
+            }
+            catch (Exception ex)
+            {
+                Log("Show settings error: " + ex.Message);
+            }
+        }
         
         /// <summary>
         /// 更新鼠标钩子服务的触发时长
@@ -54,6 +105,18 @@ namespace WinLoop
             }
 
             Log($"XuanKongSi updated: enabled={_instance._xuanKongSiConfig.Enabled}, trigger={_instance._xuanKongSiConfig.TriggerKey}, hold={_instance._xuanKongSiConfig.HoldDurationMs}ms, content={_instance._xuanKongSiConfig.ContentType}");
+        }
+
+        /// <summary>
+        /// 更新「系统分屏修饰键」（设置页保存后实时推送，与 UpdateTriggerDelay 同模式）。
+        /// </summary>
+        public static void UpdateSystemSnapModifier(Models.SnapModifierKey key)
+        {
+            if (_instance?._windowManagementService != null)
+            {
+                _instance._windowManagementService.SystemSnapModifierKey = key;
+                Log($"SystemSnapModifier updated to {key}");
+            }
         }
 
         protected override void OnStartup(StartupEventArgs e)
@@ -190,9 +253,7 @@ namespace WinLoop
                     {
                         try
                         {
-                            var win = new UI.SettingsWindow();
-                            win.Show();
-                            win.Activate();
+                            ShowSettingsWindow();
                         }
                         catch (Exception ex)
                         {
@@ -219,9 +280,7 @@ namespace WinLoop
                     {
                         try
                         {
-                            var win = new UI.SettingsWindow();
-                            win.Show();
-                            win.Activate();
+                            ShowSettingsWindow();
                         }
                         catch (Exception ex)
                         {
@@ -245,6 +304,8 @@ namespace WinLoop
                 // 加载配置获取触发时长
                 var configMgr = new Config.ConfigManager();
                 var config = configMgr.LoadConfig();
+                // 系统分屏修饰键要在拿到 config 之后才能推（服务先构造、再注入配置）
+                _windowManagementService.SystemSnapModifierKey = config.SystemSnapModifier;
                 _mouseHookService.TriggerDelayMs = config.TriggerDelay;
                 _xuanKongSiConfig = config.XuanKongSi ?? new XuanKongSiConfig();
                 config.XuanKongSi = _xuanKongSiConfig;

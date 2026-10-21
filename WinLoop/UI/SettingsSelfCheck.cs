@@ -4,6 +4,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -185,6 +186,17 @@ namespace WinLoop.UI
             // ---- 8) 操作配置：三栏布局 + 折线引线 ----
             // 引线是纯绘制，做坏了不报错、界面也照开，只有几何断言兜得住。
             CheckOperationConfigLayout(outDir, ref fail, W);
+
+            // ---- 9) 尺寸类动作的开关语义：同一窗口同一菜单，snap ↔ 还原 ----
+            // 验的是行为不是布局：第一次 snap、第二次还原、第三次再 snap、
+            // 换菜单不误触发还原。探针窗口会短暂闪一下（见方法注释）。
+            CheckSnapActionToggle(ref fail, W);
+
+            // ---- 10) 系统分屏拦截：动作 → Win+方向键 映射表 ----
+            // 只断纯映射（不发键）：真发 Win+← 会把跑自检时的前台窗口 snap 掉，
+            // 那是在用户桌面上搞破坏，自检不干这事。映射表正确 = 功能成立的大前提，
+            // 键序/时序的正确性靠注释里的推导 + 用户实测。
+            CheckSystemSnapMapping(ref fail, W);
 
             W(fail == 0 ? "结果: ALL PASS" : ("结果: FAILED (" + fail + ")"));
             Flush(sb, outDir);
@@ -691,6 +703,59 @@ namespace WinLoop.UI
                 else
                 {
                     W("FAIL: 有 " + emptyCombo + " 个下拉框没有回填选中项");
+                    fail++;
+                }
+
+                // ---- ①b 收起态必须渲染中文标签，不能是数据类型名 ----
+                // 这条钉的是 2026-10-20 的一个真实 bug：三个下拉框原本用
+                // DisplayMemberPath="Label" 指定显示字段，而 ComboBox 的**收起态**
+                // 取的是 SelectionBoxItem + SelectionBoxItemTemplate，DisplayMemberPath
+                // 不参与生成那份模板 → 模板恒为 null → 收起态的 ContentPresenter
+                // 只能把数据对象调 ToString()，框里就显示成 "WinLoop.UI.ActionOption"。
+                // 弹层是另一条链路（DisplayMemberPath 作用于容器项），所以弹层一直正常，
+                // 症状只在收起态出现 —— 只能靠截图或这类断言发现。
+                //
+                // 判据三连：
+                //   ① SelectionBoxItemTemplate 非空（DisplayMemberPath 方案下必为 null，
+                //      两者同时设还会抛 InvalidOperationException，所以只能是 ItemTemplate）；
+                //   ② 收起态模板与 ItemTemplate 必须是**同一份**实例 —— 各设一份迟早会对不上；
+                //   ③ 拿它实际套一次 SelectionBoxItem 渲染出来，TextBlock.Text 得是中文标签。
+                int badTpl = 0, badText = 0;
+                for (int i = 0; i < 8; i++)
+                {
+                    var combo = combos[i];
+                    if (combo == null || combo.SelectedItem == null) continue;
+
+                    if (combo.SelectionBoxItemTemplate == null
+                        || !Equals(combo.SelectionBoxItemTemplate, combo.ItemTemplate))
+                    {
+                        badTpl++;
+                        continue;
+                    }
+
+                    string shown = RenderSelectionBoxText(combo);
+                    if (string.IsNullOrEmpty(shown) || shown.Contains("WinLoop.") || shown.Contains("ActionOption"))
+                    {
+                        badText++;
+                    }
+                }
+
+                if (badTpl == 0 && badText == 0)
+                {
+                    W("PASS: 收起态渲染的是中文标签（SelectionBoxItemTemplate 由 ItemTemplate 提供，"
+                        + "实际渲染不含类型名）");
+                }
+                else
+                {
+                    if (badTpl > 0)
+                    {
+                        W("FAIL: 有 " + badTpl + " 个下拉框的收起态模板缺失或与 ItemTemplate 不是同一份 —— "
+                            + "只设 DisplayMemberPath 时收起态会显示数据类型名（如 WinLoop.UI.ActionOption）");
+                    }
+                    if (badText > 0)
+                    {
+                        W("FAIL: 有 " + badText + " 个下拉框收起态渲染出来的不是中文标签");
+                    }
                     fail++;
                 }
 
@@ -2636,6 +2701,50 @@ namespace WinLoop.UI
         }
 
         /// <summary>
+        /// 把 ComboBox **收起态**会显示的内容真渲染一次，返回其中第一个非空 TextBlock 的文本。
+        /// <para>
+        /// 为什么要真渲染而不是读属性：收起态显示什么，取决于"SelectionBoxItem"
+        /// 这个数据对象被"SelectionBoxItemTemplate"套出来之后是什么。只看属性看不出
+        /// 套完是字还是类型名 —— 必须让 DataTemplate 真的跑一遍。
+        /// </para>
+        /// <para>
+        /// 手法与 ComboBox 自己的收起态 ContentPresenter 一致：Content=SelectionBoxItem、
+        /// ContentTemplate=SelectionBoxItemTemplate。取不到内容或渲染不出 TextBlock 时返回空串，
+        /// 由调用方判 FAIL —— 空串说明模板坏了，比"显示类型名"同样严重。
+        /// </para>
+        /// </summary>
+        private static string RenderSelectionBoxText(ComboBox combo)
+        {
+            try
+            {
+                if (combo == null || combo.SelectionBoxItem == null) return string.Empty;
+
+                // 复用 ComboBox 模板里的那套组合，保证验的就是用户真看到的那条链路
+                var host = new ContentPresenter
+                {
+                    Content = combo.SelectionBoxItem,
+                    ContentTemplate = combo.SelectionBoxItemTemplate
+                };
+                host.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                host.Arrange(new Rect(host.DesiredSize));
+                host.UpdateLayout();
+
+                var blocks = new System.Collections.Generic.List<TextBlock>();
+                CollectTextBlocks(host, blocks);
+                foreach (var b in blocks)
+                {
+                    if (!string.IsNullOrEmpty(b.Text)) return b.Text;
+                }
+                return string.Empty;
+            }
+            catch (Exception)
+            {
+                // 渲染失败本身就说明模板有问题，交由调用方按"渲染结果为空"判 FAIL
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
         /// 逐一选中四种菜单样式并截图。
         /// 通过反射点 RadioButton.IsChecked，避免依赖鼠标。
         /// </summary>
@@ -2858,6 +2967,327 @@ namespace WinLoop.UI
             return n;
         }
 
+        /// <summary>
+        /// 尺寸类动作的"开关语义"（2026-10-21 需求）：同一窗口对同一动作
+        /// 第一次 snap → 第二次还原第一次触发前的矩形 → 第三次重新 snap；
+        /// 换一个动作 ≠ 同一菜单，应按首次逻辑直接 snap。
+        ///
+        /// 做法：建一个离屏探针小窗，**直接调 ExecuteAction**（不模拟键鼠 ——
+        /// 探针是本进程自己的窗口，走的是真实服务代码路径，与项目
+        /// "自检用反射直调、不用鼠标模拟"的约定一致）。
+        /// ⚠️ 探针 snap 时会被拉到所在显示器的工作区里，自检期间会看到它闪一下，
+        /// 这是预期的：验的正是真实 MoveWindowCompensated 链路（SWP_ASYNCWINDOWPOS，
+        /// 位置变化是指令发出后异步生效的，所以必须轮询等，不能发完立刻读）。
+        /// </summary>
+        private static void CheckSnapActionToggle(ref int fail, Action<string> W)
+        {
+            Window probe = null;
+            try
+            {
+                probe = new Window
+                {
+                    Title = "WinLoop snap-toggle probe",
+                    Width = 320,
+                    Height = 200,
+                    WindowStyle = WindowStyle.ToolWindow,
+                    ShowInTaskbar = false,
+                    ShowActivated = false,
+                    WindowStartupLocation = WindowStartupLocation.Manual,
+                    Left = -32000,   // 与自检主窗口同思路：先藏屏外
+                    Top = -32000
+                };
+                probe.Show();
+                Pump();
+
+                var hwnd = new WindowInteropHelper(probe).Handle;
+                if (hwnd == IntPtr.Zero ||
+                    !WindowManagementService.TryGetWindowRect(hwnd, out int l0, out int t0, out int r0, out int b0))
+                {
+                    W("FAIL: 探针窗口句柄/矩形取不到，无法验证 snap 还原语义");
+                    fail++;
+                    return;
+                }
+
+                var svc = new WindowManagementService();
+                var leftHalf = WinLoop.Models.WindowAction.LeftHalf;
+                var leftTwoThirds = WinLoop.Models.WindowAction.LeftTwoThirds;
+
+                // ---- 第一次 snap ----
+                svc.ExecuteAction(leftHalf, hwnd);
+                if (!WaitForRect(hwnd, 2000, (l, t, r, b) => (l, t, r, b) != (l0, t0, r0, b0)))
+                {
+                    W($"FAIL: 左半屏第一次触发后窗口未移动（仍为 {RectStr(l0, t0, r0, b0)}）");
+                    fail++;
+                    return;
+                }
+                WindowManagementService.TryGetWindowRect(hwnd, out int l1, out int t1, out int r1, out int b1);
+                W($"PASS: 第一次触发左半屏 → 移动到 {RectStr(l1, t1, r1, b1)}");
+
+                // ---- 第二次触发同一动作：应还原第一次触发前的矩形 ----
+                svc.ExecuteAction(leftHalf, hwnd);
+                if (!WaitForRect(hwnd, 2000, (l, t, r, b) => (l, t, r, b) == (l0, t0, r0, b0)))
+                {
+                    WindowManagementService.TryGetWindowRect(hwnd, out int l2, out int t2, out int r2, out int b2);
+                    W($"FAIL: 第二次触发未还原：期望 {RectStr(l0, t0, r0, b0)}，实际 {RectStr(l2, t2, r2, b2)}");
+                    fail++;
+                    return;
+                }
+                W($"PASS: 第二次触发同一动作 → 还原原矩形 {RectStr(l0, t0, r0, b0)}");
+
+                // ---- 第三次触发：锚点已清，应重新 snap（与第一次同结果）----
+                svc.ExecuteAction(leftHalf, hwnd);
+                if (!WaitForRect(hwnd, 2000, (l, t, r, b) => (l, t, r, b) == (l1, t1, r1, b1)))
+                {
+                    W("FAIL: 第三次触发未重新 snap（开关循环不成立）");
+                    fail++;
+                    return;
+                }
+                W("PASS: 第三次触发 → 重新 snap（snap/还原开关循环成立）");
+
+                // ---- 换个动作 ≠ 同一菜单：三分之二屏应按首次逻辑直接 snap ----
+                svc.ExecuteAction(leftTwoThirds, hwnd);
+                if (!WaitForRect(hwnd, 2000, (l, t, r, b) => (l, t, r, b) != (l1, t1, r1, b1)))
+                {
+                    W("FAIL: 左三分之二屏（不同菜单）未执行 snap");
+                    fail++;
+                    return;
+                }
+                W("PASS: 不同菜单（左三分之二屏）按首次逻辑 snap，不误触发还原");
+
+                // ---- 原状态最大化：snap 后再还原必须回到最大化态 ----
+                // 用户实测 bug：窗口先最大化，第一次触发右三分之二屏成功，
+                // 再次触发只回到"最大化前的普通态矩形"，最大化状态丢了。
+                // 断言不能只看矩形 —— 最大化态下 GetWindowRect 是撑满工作区的
+                // 临时矩形，判 IsZoomed 才是"状态真的回去了"。
+                var rightTwoThirds = WinLoop.Models.WindowAction.RightTwoThirds;
+                probe.WindowState = WindowState.Maximized;
+                if (!WaitForZoomed(hwnd, 2000, true))
+                {
+                    W("FAIL: 探针窗口未能进入最大化态，无法验证状态还原");
+                    fail++;
+                    return;
+                }
+                WindowManagementService.TryGetWindowRect(hwnd, out int l3, out int t3, out int r3, out int b3);
+                W($"PASS: 探针窗口已最大化 {RectStr(l3, t3, r3, b3)}");
+
+                svc.ExecuteAction(rightTwoThirds, hwnd);   // 第一次：录状态+矩形，snap
+                if (!WaitForRect(hwnd, 2000, (l, t, r, b) => (l, t, r, b) != (l3, t3, r3, b3)))
+                {
+                    W("FAIL: 最大化态第一次触发右三分之二屏后窗口未 snap");
+                    fail++;
+                    return;
+                }
+                W("PASS: 最大化态第一次触发右三分之二屏 → snap 成功");
+
+                svc.ExecuteAction(rightTwoThirds, hwnd);   // 第二次：还原矩形 + 状态
+                if (!WaitForZoomed(hwnd, 2000, true))
+                {
+                    W("FAIL: 最大化窗口 snap 后再次触发未恢复最大化状态（矩形回去了但状态丢了）");
+                    fail++;
+                    return;
+                }
+                W("PASS: 最大化窗口再次触发同一动作 → 恢复最大化状态");
+
+                probe.WindowState = WindowState.Normal;    // 复位，避免关闭时动画/位置异常
+                Pump();
+
+                // ---- 窗口居中：只挪位置不改尺寸，再触发还原 ----
+                // ⚠️ 基准必须是**当前**矩形（前面几步走完，探针停在两个 thirds / 半屏的
+                // snap 位置上），不是方法开头的 (l0,t0) —— 还原的原点 =
+                // Center 第一次触发时的位置。
+                // 断言三件事：① 位置确实变了；② **宽高一个像素都不能变**（需求红线）；
+                // ③ 还原后连位置也回去。参照系必须拿"当前显示器工作区中心"来对 ——
+                // 探针在屏外 (-32000,-32000)，MonitorFromWindow 会解析到最近的显示器，
+                // 与 CenterWindow 内部用的是同一个 API，两边天然一致。
+                var center = WinLoop.Models.WindowAction.Center;
+                if (!WindowManagementService.TryGetWindowRect(hwnd, out int bl, out int bt, out int br, out int bb))
+                {
+                    W("FAIL: 取不到探针当前矩形，无法校验窗口居中");
+                    fail++;
+                    return;
+                }
+                int bw = br - bl, bh = bb - bt;
+
+                svc.ExecuteAction(center, hwnd);   // 第一次：录位置，挪到工作区中心
+                if (!WaitForRect(hwnd, 2000, (l, t, r, b) =>
+                        (l, t, r, b) != (bl, bt, br, bb) && (r - l) == bw && (b - t) == bh))
+                {
+                    WindowManagementService.TryGetWindowRect(hwnd, out int cl, out int ct, out int cr, out int cb);
+                    W($"FAIL: 窗口居中未生效或改了尺寸：期望 {bw}x{bh} 居中，实际 {RectStr(cl, ct, cr, cb)}");
+                    fail++;
+                    return;
+                }
+
+                if (!svc.TryGetWorkAreaOf(hwnd, out int waL, out int waT, out int waW, out int waH))
+                {
+                    W("FAIL: 取不到探针所在显示器工作区，无法校验居中的参照系");
+                    fail++;
+                    return;
+                }
+                WindowManagementService.TryGetWindowRect(hwnd, out int lc, out int tc, out int rc, out int bc);
+                int centerDx = (lc + rc) / 2 - (waL + waW / 2);
+                int centerDy = (tc + bc) / 2 - (waT + waH / 2);
+                // 容差 ±8px：MoveWindowCompensated 的左右边框补偿未必严格对称、
+                // 整数取整也各有 1px 零头。要抓的是"参照系错了"（主屏中心/没排除任务栏
+                // 这类误差 ≥ 任务栏高度 24px 的错），不是这些舍入零头。
+                if (Math.Abs(centerDx) > 8 || Math.Abs(centerDy) > 8)
+                {
+                    W($"FAIL: 居中的参照系不是当前工作区中心（偏移 {centerDx},{centerDy} px）");
+                    fail++;
+                    return;
+                }
+                W($"PASS: 窗口居中（{RectStr(lc, tc, rc, bc)}，尺寸 {bw}x{bh} 不变，" +
+                  $"距工作区中心 {centerDx},{centerDy}px）");
+
+                svc.ExecuteAction(center, hwnd);   // 第二次：还原原位置
+                if (!WaitForRect(hwnd, 2000, (l, t, r, b) => (l, t, r, b) == (bl, bt, br, bb)))
+                {
+                    WindowManagementService.TryGetWindowRect(hwnd, out int rl, out int rt, out int rr, out int rb);
+                    W($"FAIL: 窗口居中再次触发未还原：期望 {RectStr(bl, bt, br, bb)}，实际 {RectStr(rl, rt, rr, rb)}");
+                    fail++;
+                    return;
+                }
+                W($"PASS: 窗口居中再次触发 → 还原原位置 {RectStr(bl, bt, br, bb)}");
+            }
+            catch (Exception ex)
+            {
+                W($"FAIL: snap 开关语义自检异常: {ex.GetType().Name}: {ex.Message}");
+                fail++;
+            }
+            finally
+            {
+                try { probe?.Close(); } catch { }
+            }
+        }
+
+        /// <summary>矩形 → 人类可读串。</summary>
+        private static string RectStr(int l, int t, int r, int b)
+            => $"({l},{t})-({r},{b}) {r - l}x{b - t}";
+
+        /// <summary>
+        /// 轮询等待探针矩形满足条件。snap/还原都走 SWP_ASYNCWINDOWPOS，
+        /// 位置异步生效，必须等；超时返回 false。
+        /// </summary>
+        private static bool WaitForRect(IntPtr hwnd, int timeoutMs, Func<int, int, int, int, bool> cond)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
+            {
+                Pump();
+                if (WindowManagementService.TryGetWindowRect(hwnd, out int l, out int t, out int r, out int b)
+                    && cond(l, t, r, b))
+                    return true;
+                if (sw.ElapsedMilliseconds >= timeoutMs) return false;
+                System.Threading.Thread.Sleep(15);
+            }
+        }
+
+        /// <summary>
+        /// 轮询等待窗口的最大化/普通态切换完成（ShowWindow(SW_MAXIMIZE) /
+        /// WPF WindowState 都可能异步生效），直到 IsZoomed 等于期望值。
+        /// </summary>
+        private static bool WaitForZoomed(IntPtr hwnd, int timeoutMs, bool expected)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            while (true)
+            {
+                Pump();
+                if (WindowManagementService.IsWindowZoomed(hwnd) == expected) return true;
+                if (sw.ElapsedMilliseconds >= timeoutMs) return false;
+                System.Threading.Thread.Sleep(15);
+            }
+        }
+
+        /// <summary>
+        /// 校验「系统分屏修饰键」特性的两张纯表：动作→Win+方向键映射、
+        /// 修饰键枚举→虚拟键码。刻意**不发真实按键** —— 自检运行在用户桌面上，
+        /// 发 Win+← 会把当时的前台窗口 snap 掉，那是破坏不是测试。
+        /// 键序正确性（连按次数、时序）由 _systemSnapMaps 注释里的推导保证 + 用户实测。
+        /// </summary>
+        private static void CheckSystemSnapMapping(ref int fail, Action<string> W)
+        {
+            // 期望表：动作 → (VK_LEFT=0x25 / VK_RIGHT=0x27, 连按次数)
+            // 左半=左×1；右上=右×2、右下=右×3、左上=左×2、左下=左×3
+            //（系统循环：左半→左上→左下→左半，同方向连按推进循环位）。
+            var expected = new (WinLoop.Models.WindowAction Action, byte Vk, int Repeat)[]
+            {
+                (WinLoop.Models.WindowAction.LeftHalf,            0x25, 1),
+                (WinLoop.Models.WindowAction.RightHalf,           0x27, 1),
+                (WinLoop.Models.WindowAction.TopLeftQuadrant,     0x25, 2),
+                (WinLoop.Models.WindowAction.BottomLeftQuadrant,  0x25, 3),
+                (WinLoop.Models.WindowAction.TopRightQuadrant,    0x27, 2),
+                (WinLoop.Models.WindowAction.BottomRightQuadrant, 0x27, 3),
+            };
+
+            foreach (var (action, vk, repeat) in expected)
+            {
+                if (!WindowManagementService.TryGetSystemSnapKeys(action, out byte gotVk, out int gotRepeat))
+                {
+                    W($"FAIL: 系统分屏映射缺少 {action}");
+                    fail++;
+                }
+                else if (gotVk != vk || gotRepeat != repeat)
+                {
+                    W($"FAIL: 系统分屏映射错误 {action}: 期望 (0x{vk:X2}, x{repeat})，实际 (0x{gotVk:X2}, x{gotRepeat})");
+                    fail++;
+                }
+            }
+
+            // 反面表：这些动作没有等价系统分屏按键，必须查不到（否则会把
+            // 不支持的动作也发 Win+方向，用户看到的不是自己要的行为）。
+            var notMapped = new[]
+            {
+                WinLoop.Models.WindowAction.TopHalf,
+                WinLoop.Models.WindowAction.BottomHalf,
+                WinLoop.Models.WindowAction.LeftTwoThirds,
+                WinLoop.Models.WindowAction.RightTwoThirds,
+                WinLoop.Models.WindowAction.Center,
+                WinLoop.Models.WindowAction.Minimize,
+                WinLoop.Models.WindowAction.Maximize,
+                WinLoop.Models.WindowAction.BackToDesktop,
+                WinLoop.Models.WindowAction.CloseWindow,
+            };
+            foreach (var action in notMapped)
+            {
+                if (WindowManagementService.TryGetSystemSnapKeys(action, out _, out _))
+                {
+                    W($"FAIL: {action} 不该有系统分屏映射（无等价 Win+方向键行为）");
+                    fail++;
+                }
+            }
+            W("PASS: 系统分屏映射表（6 入表 + 9 反面）全部正确");
+
+            // 修饰键 → VK 码：6 个选项必须各自独立（用户要左右之分），且互不相同。
+            var modVkMethod = typeof(WindowManagementService).GetMethod("ModifierVkOf",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static);
+            if (modVkMethod == null)
+            {
+                W("FAIL: 反射不到 ModifierVkOf（方法被改名/删除，断言失去意义）");
+                fail++;
+                return;
+            }
+            var seen = new System.Collections.Generic.Dictionary<int, WinLoop.Models.SnapModifierKey>();
+            foreach (WinLoop.Models.SnapModifierKey key in Enum.GetValues(typeof(WinLoop.Models.SnapModifierKey)))
+            {
+                int vk = (int)(byte)modVkMethod.Invoke(null, new object[] { key });
+                if (vk == 0)
+                {
+                    W($"FAIL: 修饰键 {key} 的虚拟键码为 0");
+                    fail++;
+                }
+                else if (seen.TryGetValue(vk, out var clash))
+                {
+                    W($"FAIL: 修饰键 {key} 与 {clash} 共用 VK 0x{vk:X2}（左右键必须分开）");
+                    fail++;
+                }
+                else
+                {
+                    seen[vk] = key;
+                }
+            }
+            W("PASS: 修饰键 → 虚拟键码映射（左/右 Shift/Ctrl/Alt 六个独立）");
+        }
+
         /// <summary>把消息泵空，让布局/绑定/样式应用全部完成。</summary>
         /// <summary>
         /// 反射读 SettingsWindow 的私有静态常量。
@@ -2918,7 +3348,10 @@ namespace WinLoop.UI
                 if (child is UIElement ue && ue.Visibility == Visibility.Visible)
                 {
                     if (ue is TextBox || ue is Button || ue is ComboBox
-                        || ue is CheckBox || ue is RadioButton) n++;
+                        || ue is CheckBox || ue is RadioButton
+                        // ToggleSwitchStyle 的宿主是 ToggleButton（布尔行 2026-10-20 改版），
+                        // 不计数会让"杂项/悬空寺页渲染了几个控件"的证据悄悄少三个。
+                        || ue is ToggleButton) n++;
                 }
                 n += CountVisible(child);
             }

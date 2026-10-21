@@ -208,6 +208,7 @@ namespace WinLoop.UI
             _configManager = new ConfigManager();
             _menuFactory = new RadialMenuFactory();
             InitializeXuanKongSiControls();
+            InitializeSystemSnapModifierCombo();
 
             // 先把 8 个选区行的控件收进数组，再初始化下拉框 ——
             // 顺序反了 InitializeActionCombos 拿不到这些 ComboBox。
@@ -387,40 +388,85 @@ namespace WinLoop.UI
             };
         }
 
+        /// <summary>
+        /// 动作清单的**唯一**文案源（中文名只在这里写一次）。
+        ///
+        /// 数组顺序 = 下拉框里的显示顺序，**与枚举序号毫无关系** ——
+        /// 落盘的是 WindowAction 的数字，重排显示不会动用户配置。
+        ///
+        /// 分四组：窗口状态 / 半屏 / 四分屏 / 三分之二屏。依据：
+        ///   ① 按"要什么状态、要多大"分，不跟着枚举历史顺序走（枚举首项是 BackToDesktop）；
+        ///   ② 每组 ≤ 6 项，再多分组就失去意义；
+        ///   ③ 破坏性的「关闭窗口」放组末，且不做红色标记 ——
+        ///      下拉项里的红字会被读成"禁用项"，比误触更糟；
+        ///   ④ 「窗口状态」组 = **不改窗口尺寸**的动作集合（最小化/最大化/回到桌面/居中），
+        ///      尺寸类动作全部在另外三组 —— 用户找"不动大小的操作"时只看这一组。
+        ///
+        /// ⚠️ 删除动作时**不要**顺手重排枚举（那是 13/14 空号的来由，见 AppConfig.WindowAction）。
+        /// </summary>
+        private static readonly (WindowAction Action, string Label, string Group)[] ActionCatalog =
+        {
+            (WindowAction.Minimize,            "最小化窗口",   ActionGroupWindowState),
+            (WindowAction.Maximize,            "最大化窗口",   ActionGroupWindowState),
+            (WindowAction.BackToDesktop,       "回到桌面",     ActionGroupWindowState),
+            (WindowAction.Center,              "窗口居中",     ActionGroupWindowState),
+            (WindowAction.CloseWindow,         "关闭窗口",     ActionGroupWindowState),
+
+            (WindowAction.LeftHalf,            "左半屏",       ActionGroupHalf),
+            (WindowAction.RightHalf,           "右半屏",       ActionGroupHalf),
+            (WindowAction.TopHalf,             "上半屏",       ActionGroupHalf),
+            (WindowAction.BottomHalf,          "下半屏",       ActionGroupHalf),
+
+            (WindowAction.TopLeftQuadrant,     "左上分屏",     ActionGroupQuadrant),
+            (WindowAction.BottomLeftQuadrant,  "左下分屏",     ActionGroupQuadrant),
+            (WindowAction.TopRightQuadrant,    "右上分屏",     ActionGroupQuadrant),
+            (WindowAction.BottomRightQuadrant, "右下分屏",     ActionGroupQuadrant),
+
+            (WindowAction.LeftTwoThirds,       "左三分之二屏", ActionGroupTwoThirds),
+            (WindowAction.RightTwoThirds,      "右三分之二屏", ActionGroupTwoThirds)
+        };
+
+        // 组头文案。单列成常量而不是字面量：FontSelfCheck 的字符样本要照着这里覆盖新字。
+        private const string ActionGroupWindowState = "窗口状态";
+        private const string ActionGroupHalf = "半屏";
+        private const string ActionGroupQuadrant = "四分屏";
+        private const string ActionGroupTwoThirds = "三分之二屏";
+
+        /// <summary>
+        /// 把 <see cref="ActionCatalog"/> 展开成"组头行 + 动作行"的平铺列表。
+        /// 组头只在该组第一项之前插一次，靠"分组名变化"判定，不需要另立分组表。
+        /// </summary>
+        private static List<ActionOption> BuildActionItems()
+        {
+            var list = new List<ActionOption>(ActionCatalog.Length + 4);
+            string currentGroup = null;
+            foreach (var entry in ActionCatalog)
+            {
+                if (!string.Equals(entry.Group, currentGroup, StringComparison.Ordinal))
+                {
+                    currentGroup = entry.Group;
+                    list.Add(ActionOption.Header(currentGroup));
+                }
+                list.Add(ActionOption.Action(entry.Action, entry.Label));
+            }
+            return list;
+        }
+
         private void InitializeActionCombos()
         {
             try
             {
-                // 获取所有窗口操作枚举值
-                // 使用中文显示映射，同时保持 SelectedValue 为 WindowAction
-                var items = new[]
-                {
-                    new { Key = WindowAction.BackToDesktop, Label = "回到桌面" },
-                    new { Key = WindowAction.Minimize, Label = "最小化窗口" },
-                    new { Key = WindowAction.Maximize, Label = "最大化窗口" },
-                    new { Key = WindowAction.LeftHalf, Label = "左半屏" },
-                    new { Key = WindowAction.RightHalf, Label = "右半屏" },
-                    new { Key = WindowAction.TopHalf, Label = "上半屏" },
-                    new { Key = WindowAction.BottomHalf, Label = "下半屏" },
-                    new { Key = WindowAction.TopLeftQuadrant, Label = "左上分屏" },
-                    new { Key = WindowAction.BottomLeftQuadrant, Label = "左下分屏" },
-                    new { Key = WindowAction.TopRightQuadrant, Label = "右上分屏" },
-                    new { Key = WindowAction.BottomRightQuadrant, Label = "右下分屏" },
-                    new { Key = WindowAction.LeftTwoThirds, Label = "左三分之二屏" },
-                    new { Key = WindowAction.RightTwoThirds, Label = "右三分之二屏" },
-                    new { Key = WindowAction.ToggleMaximize, Label = "最大化/还原切换" },
-                    new { Key = WindowAction.ToggleTopMost, Label = "窗口置顶切换" },
-                    new { Key = WindowAction.CloseWindow, Label = "关闭窗口" }
-                };
-
+                // 数据源 = 上面的平铺列表（含不可选的组头行）。
                 // 8 个选区行各有一个下拉框，数据源**共用同一份**动作清单。
-                // 共用数组实例是安全的：ItemsSource 只被读，不会被任何一方改写。
+                // 共用实例是安全的：ItemsSource 只被读；组头选不中，不会写进配置。
+                var items = BuildActionItems();
+
                 for (int i = 0; i < _opCombos.Length; i++)
                 {
                     var combo = _opCombos[i];
                     if (combo == null) continue;
                     combo.ItemsSource = items;
-                    combo.DisplayMemberPath = "Label";
+                    combo.ItemTemplate = ComboItemLabelTemplate;
                     combo.SelectedValuePath = "Key";
                 }
             }
@@ -429,6 +475,34 @@ namespace WinLoop.UI
                 App.Log("InitializeActionCombos error: " + ex.Message);
             }
         }
+
+        /// <summary>
+        /// 下拉框条目的显示模板（XAML 资源 <c>ComboItemLabelTemplate</c>，一个绑 Label 的 TextBlock）。
+        /// <para>
+        /// ⚠️ **必须用 ItemTemplate，不能用 DisplayMemberPath**：ComboBox 收起态取的是
+        /// <c>SelectionBoxItem</c> + <c>SelectionBoxItemTemplate</c>，而
+        /// <c>DisplayMemberPath</c> 只作用于弹层内的容器项、不生成那份模板 ——
+        /// 于是收起态模板为 null，ContentPresenter 只能调数据对象的 <c>ToString()</c>，
+        /// 框里就显示成 <c>WinLoop.UI.ActionOption</c> 而不是"最小化窗口"。
+        /// 两者同时设还会抛 InvalidOperationException，所以只能走 ItemTemplate。
+        /// </para>
+        /// <para>
+        /// 懒查找 + 缓存：构造期（InitializeComponent 之后）资源树已就绪。
+        /// </para>
+        /// </summary>
+        private System.Windows.DataTemplate ComboItemLabelTemplate
+        {
+            get
+            {
+                if (_comboItemLabelTemplate == null)
+                {
+                    _comboItemLabelTemplate = TryFindResource("ComboItemLabelTemplate")
+                                              as System.Windows.DataTemplate;
+                }
+                return _comboItemLabelTemplate;
+            }
+        }
+        private System.Windows.DataTemplate _comboItemLabelTemplate;
 
         /// <summary>
         /// 把 XAML 里 8 个选区行的控件收进按位置索引寻址的数组，并挂上布局钩子。
@@ -507,7 +581,7 @@ namespace WinLoop.UI
                     new { Key = XuanKongSiTriggerKey.Shift, Label = "左右Shift" },
                     new { Key = XuanKongSiTriggerKey.Ctrl, Label = "左右Ctrl" }
                 };
-                XuanKongSiKeyCombo.DisplayMemberPath = "Label";
+                XuanKongSiKeyCombo.ItemTemplate = ComboItemLabelTemplate;
                 XuanKongSiKeyCombo.SelectedValuePath = "Key";
 
                 XuanKongSiContentCombo.ItemsSource = new[]
@@ -515,12 +589,143 @@ namespace WinLoop.UI
                     new { Key = XuanKongSiContentType.Image, Label = "图片" },
                     new { Key = XuanKongSiContentType.Text, Label = "文字" }
                 };
-                XuanKongSiContentCombo.DisplayMemberPath = "Label";
+                XuanKongSiContentCombo.ItemTemplate = ComboItemLabelTemplate;
                 XuanKongSiContentCombo.SelectedValuePath = "Key";
             }
             catch (Exception ex)
             {
                 App.Log("InitializeXuanKongSiControls error: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 填充「系统分屏修饰键」下拉（操作配置页卡底通栏行）。
+        /// 选项顺序 = 用户 2026-10-21 指定的清单顺序；
+        /// 默认左 Alt 由 <see cref="AppConfig.SystemSnapModifier"/> 给。
+        /// </summary>
+        private void InitializeSystemSnapModifierCombo()
+        {
+            try
+            {
+                if (SystemSnapModifierCombo == null) return;
+                SystemSnapModifierCombo.ItemsSource = new[]
+                {
+                    new { Key = SnapModifierKey.LeftShift,  Label = "左 Shift" },
+                    new { Key = SnapModifierKey.RightShift, Label = "右 Shift" },
+                    new { Key = SnapModifierKey.LeftCtrl,   Label = "左 Ctrl" },
+                    new { Key = SnapModifierKey.RightCtrl,  Label = "右 Ctrl" },
+                    new { Key = SnapModifierKey.LeftAlt,    Label = "左 Alt" },
+                    new { Key = SnapModifierKey.RightAlt,   Label = "右 Alt" }
+                };
+                SystemSnapModifierCombo.ItemTemplate = ComboItemLabelTemplate;
+                SystemSnapModifierCombo.SelectedValuePath = "Key";
+            }
+            catch (Exception ex)
+            {
+                App.Log("InitializeSystemSnapModifierCombo error: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 修饰键下拉即选即推送。与 TriggerDelay（文本框、打完一串数字才算一个值）
+        /// 不同：下拉一次 SelectionChanged 就是一个确定值，改完不等保存就能出去试
+        /// 分屏效果，行为可预期。config 本身仍在 SaveConfig 落盘，这里只推运行态。
+        /// </summary>
+        private void SystemSnapModifierCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            try
+            {
+                if (SystemSnapModifierCombo.SelectedValue is SnapModifierKey key)
+                {
+                    App.UpdateSystemSnapModifier(key);
+                }
+            }
+            catch (Exception ex)
+            {
+                App.Log("SystemSnapModifierCombo_SelectionChanged error: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// 当前打开的提示气泡。只留一个引用：打开新的会关掉旧的，
+        /// 同一图标再点一次 = 收起（点击式提示的常规预期）。
+        /// </summary>
+        private ToolTip _hintTip;
+
+        /// <summary>
+        /// 提示图标（ⓘ）的点击处理 —— 全窗口所有 HintIcon 由样式里的
+        /// EventSetter 统一接到这里，使用处不用各挂一遍事件。
+        /// <para>
+        /// 文案存在图标的 ToolTip 属性里当字符串仓库（样式里已设
+        /// ToolTipService.IsEnabled=False 禁掉悬停自动弹出，否则会退化成
+        /// "悬停也弹"，与"点击展示"的约定相悖）。
+        /// </para>
+        /// <para>
+        /// ⚠️ 内容用自带换行的 TextBlock 而不是直接塞字符串：这里 new 出来的
+        /// ToolTip 尚未进逻辑树，Window.Resources 里那条隐式 ToolTip 样式
+        /// （MaxWidth + Wrap）不保证生效，靠它就可能在长文案上拉成一条长条。
+        /// </para>
+        /// <para>
+        /// `StaysOpen=false`：点页面别处自动关。这里在 Click（MouseUp 之后）里
+        /// 打开是安全的 —— 提前到 MouseDown 阶段打开才会被同一串输入立刻收掉。
+        /// </para>
+        /// </summary>
+        private void HintIcon_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var fe = sender as FrameworkElement;
+                if (fe == null) return;
+                string text = fe.ToolTip as string;
+                if (string.IsNullOrEmpty(text)) return;
+
+                // 同一枚图标再点一次：收起（不是重开）
+                if (_hintTip != null && _hintTip.IsOpen
+                    && ReferenceEquals(_hintTip.PlacementTarget, fe))
+                {
+                    _hintTip.IsOpen = false;
+                    return;
+                }
+
+                if (_hintTip != null)
+                {
+                    _hintTip.IsOpen = false;
+                    _hintTip = null;
+                }
+
+                var tip = new ToolTip
+                {
+                    PlacementTarget = fe,
+                    Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom,
+                    VerticalOffset = 6,
+                    StaysOpen = false,
+                    // ⚠️ Style=null 是必须的，否则显示的是类型名而不是文案：
+                    // Window.Resources 里那条隐式 ToolTip 样式带 ContentTemplate
+                    // （TextBlock Text="{Binding}"）。ContentPresenter 在
+                    // ContentTemplate 非空时**会用它渲染 UIElement 内容**，并把
+                    // Content 当 DataContext —— 于是 {Binding} 绑到我们塞进去的
+                    // TextBlock 对象本身，ToString() 出来就是
+                    // "System.Windows.Controls.TextBlock"。用户实测看到的"代码"
+                    // 就是这个。置空 Style 后换行/宽度全由下面显式给，可控。
+                    Style = null,
+                    Content = new TextBlock
+                    {
+                        Text = text,
+                        TextWrapping = TextWrapping.Wrap,
+                        MaxWidth = 340,
+                        LineHeight = 18
+                    }
+                };
+                tip.Closed += (s2, a2) =>
+                {
+                    if (ReferenceEquals(_hintTip, s2)) _hintTip = null;
+                };
+                _hintTip = tip;
+                tip.IsOpen = true;
+            }
+            catch (Exception ex)
+            {
+                App.Log("HintIcon_Click error: " + ex.Message);
             }
         }
 
@@ -563,13 +768,22 @@ namespace WinLoop.UI
             catch { }
         }
 
+        /// <summary>
+        /// 刷新「操作提示」文案。
+        /// <para>
+        /// 2026-10-21 起这句不再占一整行，而是写进「启用悬空寺」开关的 ToolTip ——
+        /// 它讲的是"双击哪个键唤出、怎么收起"，本质是该开关的补充说明，
+        /// 单独占一行只会把第一张卡片的行距拉松。文案仍是动态的：
+        /// 触发键下拉变化、开关勾选变化都会重新算一遍。
+        /// </para>
+        /// </summary>
         private void UpdateXuanKongSiOperationHint()
         {
             try
             {
-                if (XuanKongSiOperationHintText == null) return;
+                if (XuanKongSiEnabledCheck == null) return;
 
-                var enabled = XuanKongSiEnabledCheck != null && XuanKongSiEnabledCheck.IsChecked == true;
+                var enabled = XuanKongSiEnabledCheck.IsChecked == true;
                 var key = XuanKongSiTriggerKey.Alt;
                 if (XuanKongSiKeyCombo != null && XuanKongSiKeyCombo.SelectedValue is XuanKongSiTriggerKey k)
                 {
@@ -577,13 +791,25 @@ namespace WinLoop.UI
                 }
 
                 var keyLabel = FormatXuanKongSiTriggerKey(key);
-                var text = $"双击 {keyLabel} 显示，按 ESC 隐藏（点击覆盖层不收起）";
+                // 一份文案讲全：怎么唤出 + 是什么 + 怎么收起。
+                // 旧版拆在两处（ⓘ 讲"显示文字或图片"、原「操作提示」行讲"按 ESC"），
+                // 用户点 ⓘ 就找不到 ESC 那段 —— 现在两处同源、内容完整。
+                var text = $"双击 {keyLabel} 显示浮动内容层（文字或图片），按 ESC 收起；点击覆盖层不收起。";
                 if (!enabled)
                 {
                     text = $"已关闭。启用后：{text}";
                 }
 
-                XuanKongSiOperationHintText.Text = text;
+                // 同一份文案写两处：
+                // ① 开关的 ToolTip —— 悬停开关即可读到（用户要求的主入口）；
+                // ② 标签旁 ⓘ 的 ToolTip —— 点击图标也能读到。原来 ⓘ 里是静态的
+                //    "双击热键唤出的浮动内容层，显示文字或图片"，没有"按 ESC 收起"
+                //    这一段，用户点开看过之后直接来问那段哪去了 —— 两处必须同源。
+                XuanKongSiEnabledCheck.ToolTip = text;
+                if (XuanKongSiInfoIcon != null)
+                {
+                    XuanKongSiInfoIcon.ToolTip = text;
+                }
             }
             catch { }
         }
@@ -1080,6 +1306,65 @@ namespace WinLoop.UI
             }
         }
 
+        /// <summary>
+        /// 左侧导航搜索框：按内容文本实时过滤导航项（参照 WorkBuddy 设置窗口）。
+        /// 只改 Visibility，不销毁控件 —— 四项的 Name / GroupName / Checked 事件链
+        /// 都保持完好，BindNavigation() 按名字索引的逻辑不受影响。
+        /// </summary>
+        private void NavSearchBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            FilterNav(NavSearchBox == null ? string.Empty : NavSearchBox.Text);
+        }
+
+        /// <summary>回车跳到第一个还看得见的导航项（有则跳，没有就什么都不做）。</summary>
+        private void NavSearchBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key != Key.Enter) return;
+            var navs = GetNavItems();
+            foreach (var nav in navs)
+            {
+                if (nav.Visibility == Visibility.Visible)
+                {
+                    if (nav.IsChecked != true) nav.IsChecked = true;
+                    break;
+                }
+            }
+            e.Handled = true;
+        }
+
+        private RadioButton[] GetNavItems()
+        {
+            return new[] { NavMenuStyle, NavOperation, NavXuanKongSi, NavMisc };
+        }
+
+        /// <summary>
+        /// 过滤规则：导航项的 Content 是「Path + TextBlock」的 StackPanel（见 XAML），
+        /// 拿 TextBlock 的文本做不区分大小写的子串匹配；搜索词为空则全部恢复。
+        /// </summary>
+        private void FilterNav(string query)
+        {
+            var q = query == null ? string.Empty : query.Trim();
+            foreach (var nav in GetNavItems())
+            {
+                if (nav == null) continue;
+                bool match = q.Length == 0;
+                if (!match && nav.Content is StackPanel panel)
+                {
+                    foreach (var child in panel.Children)
+                    {
+                        var tb = child as TextBlock;
+                        if (tb != null && tb.Text != null
+                            && tb.Text.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            match = true;
+                            break;
+                        }
+                    }
+                }
+                nav.Visibility = match ? Visibility.Visible : Visibility.Collapsed;
+            }
+        }
+
         private void PopulateUIFromConfig()
         {
             try
@@ -1154,6 +1439,13 @@ namespace WinLoop.UI
                 // Web mode removed: coerce to Text for display.
                 var ct = sp.ContentType == XuanKongSiContentType.Web ? XuanKongSiContentType.Text : sp.ContentType;
                 XuanKongSiContentCombo.SelectedValue = ct;
+
+                // 回填系统分屏修饰键（老配置无此字段时 ConfigManager 已兜底为 LeftAlt）。
+                // 回填触发的 SelectionChanged 会顺带推送一次当前值，幂等无害。
+                if (SystemSnapModifierCombo != null)
+                {
+                    SystemSnapModifierCombo.SelectedValue = _config.SystemSnapModifier;
+                }
 
                 try
                 {
@@ -1362,6 +1654,12 @@ namespace WinLoop.UI
 
                 // 保存触发时长
                 if (int.TryParse(TriggerDelayBox.Text, out var td)) _config.TriggerDelay = td;
+
+                // 保存系统分屏修饰键（即选即推送已由 SelectionChanged 负责，这里落盘）
+                if (SystemSnapModifierCombo != null && SystemSnapModifierCombo.SelectedValue is SnapModifierKey smk)
+                {
+                    _config.SystemSnapModifier = smk;
+                }
                 
                 // 操作配置已在选择时实时保存到_config.ActionMapping，无需额外处理
                 
@@ -1961,30 +2259,6 @@ namespace WinLoop.UI
             catch (Exception ex)
             {
                 App.Log("UpdatePreviewFitLabel error: " + ex.Message);
-            }
-        }
-
-        private string MapActionToChinese(WindowAction act)
-        {
-            switch (act)
-            {
-                case WindowAction.BackToDesktop: return "回到桌面";
-                case WindowAction.Minimize: return "最小化窗口";
-                case WindowAction.Maximize: return "最大化窗口";
-                case WindowAction.LeftHalf: return "左半屏";
-                case WindowAction.RightHalf: return "右半屏";
-                case WindowAction.TopHalf: return "上半屏";
-                case WindowAction.BottomHalf: return "下半屏";
-                case WindowAction.TopLeftQuadrant: return "左上分屏";
-                case WindowAction.BottomLeftQuadrant: return "左下分屏";
-                case WindowAction.TopRightQuadrant: return "右上分屏";
-                case WindowAction.BottomRightQuadrant: return "右下分屏";
-                case WindowAction.LeftTwoThirds: return "左三分之二屏";
-                case WindowAction.RightTwoThirds: return "右三分之二屏";
-                case WindowAction.ToggleMaximize: return "最大化/还原切换";
-                case WindowAction.ToggleTopMost: return "窗口置顶切换";
-                case WindowAction.CloseWindow: return "关闭窗口";
-                default: return act.ToString();
             }
         }
 
@@ -2660,6 +2934,37 @@ namespace WinLoop.UI
         public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
         {
             throw new NotSupportedException();
+        }
+    }
+
+    /// <summary>
+    /// 动作下拉框里的一行。两种形态：可选的**动作**、不可选的**组头**。
+    ///
+    /// <para>
+    /// 为什么不用 WPF 的分组（CollectionViewSource + GroupStyle）：ComboBox 折叠态显示的是
+    /// SelectionBoxItem，真分组之后它变成 GroupItem，框里就会显示组名而不是当前动作名。
+    /// 所以这里把组头做成"普通数据行"，外观与可选性在 XAML 的 OpActionItemStyle 里区分。
+    /// </para>
+    /// <para>
+    /// 组头的 <see cref="Key"/> 恒为 null → <c>SelectedValue</c> 永远匹配不到它；
+    /// 再配合 OpActionItemStyle 里 <c>IsEnabled=False</c>（键盘导航跳过）与
+    /// <c>IsHitTestVisible=False</c>（鼠标点不中），组头不可能被选中，也就不会写进配置。
+    /// </para>
+    /// </summary>
+    internal sealed class ActionOption
+    {
+        public WindowAction? Key { get; private set; }
+        public string Label { get; private set; }
+        public bool IsHeader { get; private set; }
+
+        public static ActionOption Header(string text)
+        {
+            return new ActionOption { Label = text, IsHeader = true };
+        }
+
+        public static ActionOption Action(WindowAction key, string label)
+        {
+            return new ActionOption { Key = key, Label = label };
         }
     }
 }

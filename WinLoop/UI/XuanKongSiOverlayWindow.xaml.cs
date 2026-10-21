@@ -49,13 +49,6 @@ namespace WinLoop.UI
             }
             catch { }
 
-            try
-            {
-                OperationHint.Text = $"双击 {FormatTriggerKey(cfg.TriggerKey)} 显示，按 ESC 隐藏";
-                OperationHint.Opacity = 0.95;
-            }
-            catch { }
-
             PrepareCardPosition(_edge);
 
             RenderXuanKongSiContent(cfg);
@@ -577,7 +570,6 @@ namespace WinLoop.UI
                         {
                             CardTransform.X = 0;
                             CardHost.Opacity = 0.97;
-                            try { OperationHint.Opacity = 0.95; } catch { }
                             App.Log("XuanKongSiOverlay fail-safe applied: forced card into view");
                         }
                     }
@@ -835,7 +827,6 @@ namespace WinLoop.UI
             // Pure translation animation: start off-screen so it slides in cleanly.
             // Use a large offset here; exact value will be computed once ActualWidth is known.
             CardHost.Opacity = 0.97;
-            try { OperationHint.Opacity = 0.95; } catch { }
             CardTransform.X = (edge == SlideEdge.Right) ? 2400 : -2400;
         }
 
@@ -864,7 +855,6 @@ namespace WinLoop.UI
             {
                 CardTransform.X = 0;
                 CardHost.Opacity = 0.97;
-                try { OperationHint.Opacity = 0.95; } catch { }
             }
         }
 
@@ -904,25 +894,6 @@ namespace WinLoop.UI
             catch
             {
                 return 1600;
-            }
-        }
-
-        private string FormatTriggerKey(XuanKongSiTriggerKey triggerKey)
-        {
-            switch (triggerKey)
-            {
-                case XuanKongSiTriggerKey.LeftCtrl: return "左Ctrl";
-                case XuanKongSiTriggerKey.RightCtrl: return "右Ctrl";
-                case XuanKongSiTriggerKey.LeftShift: return "左Shift";
-                case XuanKongSiTriggerKey.RightShift: return "右Shift";
-                case XuanKongSiTriggerKey.LeftAlt: return "左Alt";
-                case XuanKongSiTriggerKey.RightAlt: return "右Alt";
-                case XuanKongSiTriggerKey.LeftWin: return "左Win";
-                case XuanKongSiTriggerKey.RightWin: return "右Win";
-                case XuanKongSiTriggerKey.Alt: return "左右Alt";
-                case XuanKongSiTriggerKey.Shift: return "左右Shift";
-                case XuanKongSiTriggerKey.Ctrl: return "左右Ctrl";
-                default: return "左右Alt";
             }
         }
 
